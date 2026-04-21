@@ -1,6 +1,16 @@
 import json
 import os
 import boto3
+from decimal import Decimal
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            # Convert Decimal to int if it's a whole number, else float
+            if obj % 1 == 0:
+                return int(obj)
+            return float(obj)
+        return super(DecimalEncoder, self).default(obj)
 
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ.get('DIGESTS_TABLE', 'ResearchDigests')
@@ -34,7 +44,7 @@ def lambda_handler(event, context):
         return {
             "statusCode": 200,
             "headers": cors_headers,
-            "body": json.dumps(recent_digests)
+            "body": json.dumps(recent_digests, cls=DecimalEncoder)
         }
     except Exception as e:
         print(f"Error fetching digests: {str(e)}")
