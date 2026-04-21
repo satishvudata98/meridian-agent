@@ -51,12 +51,6 @@ Resources:
       MemorySize: 128
       FunctionUrlConfig:
         AuthType: NONE
-        Cors:
-          AllowOrigins:
-            - "*"
-          AllowMethods:
-            - POST
-            - OPTIONS
       Environment:
         Variables:
           QUEUE_URL: !Ref AgentRunQueue
