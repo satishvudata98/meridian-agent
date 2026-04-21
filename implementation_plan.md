@@ -15,7 +15,7 @@ Build an Autonomous AI Research & Monitoring Agent — a production-grade system
 - **Backend (Orchestration & APIs):** Python 3.12 Lambdas, API Gateway (HTTP & WebSocket), AWS SAM (Serverless Application Model).
 - **AI / LLMs (Amazon Bedrock):** 
   - Claude 3 Haiku (for tool decisions & summarization)
-  - Claude 3.5 Sonnet (for deep synthesis)
+  - Claude 4 Sonnet (for deep synthesis)
   - Titan Embeddings v2 (for vectorizing research)
 - **Data & Storage:** 
   - DynamoDB (Agent runs, user configs, digests)
@@ -34,7 +34,7 @@ These manual setup steps must be performed in your AWS Console and third-party p
 
 1. **Enable Bedrock Model Access:**
    - Go to AWS Console -> Amazon Bedrock -> Model Access.
-   - Request access to **Anthropic Claude 3 Haiku**, **Anthropic Claude 3.5 Sonnet**, and **Amazon Titan Embeddings v2**. (This may take a few minutes to be approved).
+   - Request access to **Anthropic Claude 3 Haiku**, **Anthropic Claude 4 Sonnet**, and **Amazon Titan Embeddings v2**. (This may take a few minutes to be approved).
 2. **Verify SES Email Identity:**
    - Go to AWS Console -> Amazon Simple Email Service (SES).
    - Under "Verified Identities", add and verify the email address you will use to send and receive digest emails to avoid the SES sandbox block.
