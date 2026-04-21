@@ -1,0 +1,24 @@
+# Node/Next.js
+node_modules/
+.next/
+out/
+build/
+.env*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# AWS SAM
+.aws-sam/
+samconfig.toml
+
+# OS
+.DS_Store
+Thumbs.db

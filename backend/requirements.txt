@@ -1,0 +1,5 @@
+boto3
+anthropic
+psycopg2-binary
+redis
+tavily-python

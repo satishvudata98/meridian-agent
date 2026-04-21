@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AI Research Agent - Data Layer
+
+Resources:
+  AgentRunsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AgentRuns
+      AttributeDefinitions:
+        - AttributeName: run_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: run_id
+          KeyType: HASH
+        - AttributeName: created_at
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UserRunsIdx
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  TopicsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ResearchTopics
+      AttributeDefinitions:
+        - AttributeName: topic_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: topic_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserTopicsIdx
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  DigestsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ResearchDigests
+      AttributeDefinitions:
+        - AttributeName: digest_id
+          AttributeType: S
+        - AttributeName: topic_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: digest_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: TopicDigestsIdx
+          KeySchema:
+            - AttributeName: topic_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+Outputs:
+  AgentRunsTableName:
+    Value: !Ref AgentRunsTable
+  TopicsTableName:
+    Value: !Ref TopicsTable
+  DigestsTableName:
+    Value: !Ref DigestsTable
