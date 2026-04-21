@@ -78,6 +78,27 @@ Resources:
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
 
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AgentConnections
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+        - AttributeName: run_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: RunConnectionsIdx
+          KeySchema:
+            - AttributeName: run_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+
 Outputs:
   AgentRunsTableName:
     Value: !Ref AgentRunsTable
@@ -85,3 +106,5 @@ Outputs:
     Value: !Ref TopicsTable
   DigestsTableName:
     Value: !Ref DigestsTable
+  ConnectionsTableName:
+    Value: !Ref ConnectionsTable
