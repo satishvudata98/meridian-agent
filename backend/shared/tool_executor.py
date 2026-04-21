@@ -1,5 +1,8 @@
 import json
 import os
+import uuid
+from datetime import datetime
+import boto3
 from tavily import TavilyClient
 
 class ToolExecutor:
@@ -13,6 +16,10 @@ class ToolExecutor:
 
         self.llm = llm_client
         self.memory = memory_store
+        
+        # Initialize DynamoDB Client
+        self.dynamodb = boto3.resource('dynamodb')
+        self.digests_table_name = os.environ.get('DIGESTS_TABLE', 'ResearchDigests')
 
     def execute(self, tool_name, tool_input):
         print(f"Executing tool: {tool_name} with input: {tool_input}")
@@ -68,5 +75,22 @@ class ToolExecutor:
         return "Memory Store or LLM Client not initialized."
 
     def _create_digest(self, args):
-        # In a real flow, this triggers the SQS or DB write to log the finished digest.
-        return f"SUCCESS: Digest created for topic {args.get('topic_id')} with {len(args.get('findings', []))} findings."
+        topic_id = args.get('topic_id', 'unknown')
+        findings = args.get('findings', [])
+        
+        digest_id = f"digest-{uuid.uuid4().hex[:8]}"
+        created_at = datetime.utcnow().isoformat()
+        
+        try:
+            table = self.dynamodb.Table(self.digests_table_name)
+            table.put_item(Item={
+                'digest_id': digest_id,
+                'topic_id': topic_id,
+                'findings': findings,
+                'created_at': created_at,
+                'confidence': 95 # Hardcoded for now, could be determined by LLM
+            })
+            return f"SUCCESS: Digest {digest_id} created for topic {topic_id} with {len(findings)} findings."
+        except Exception as e:
+            print(f"Failed to save digest: {e}")
+            return f"ERROR: Failed to save digest. Details: {e}"

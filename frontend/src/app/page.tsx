@@ -1,12 +1,11 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchIcon, ActivityIcon, PlusIcon, ExternalLink, Loader2Icon } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 
@@ -14,6 +13,33 @@ export default function Home() {
   const router = useRouter();
   const [topicInput, setTopicInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [digests, setDigests] = useState<any[]>([]);
+  const [isLoadingDigests, setIsLoadingDigests] = useState(true);
+
+  useEffect(() => {
+    const fetchDigests = async () => {
+      try {
+        const url = process.env.NEXT_PUBLIC_GET_DIGESTS_URL;
+        if (!url) {
+          console.warn("NEXT_PUBLIC_GET_DIGESTS_URL is not set. Using empty digests.");
+          setIsLoadingDigests(false);
+          return;
+        }
+        
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          setDigests(data || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch digests", err);
+      } finally {
+        setIsLoadingDigests(false);
+      }
+    };
+    
+    fetchDigests();
+  }, []);
 
   const handleTrigger = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,11 +76,7 @@ export default function Home() {
     }
   };
 
-  // Mock data for the Scaffold - in production this fetches from our DynamoDB digest API
-  const digests = [
-    { id: "run-LLM500", topic: "LLM Agent Frameworks 2025", date: "April 21, 2026", confidence: 94, findings: ["Autonomous routing is standard", "Cost guardrails are key", "Bedrock usage surging"] },
-    { id: "run-AWS701", topic: "AWS Serverless Pricing Models", date: "April 20, 2026", confidence: 88, findings: ["Lambda cold starts drastically mitigated", "SQS limits natively increased", "pgvector standard in RDS"] }
-  ];
+  // Mock data removed
 
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-50 p-8 sm:p-20 font-[family-name:var(--font-geist-sans)] selection:bg-indigo-500/30">
@@ -89,9 +111,17 @@ export default function Home() {
             <SearchIcon className="w-5 h-5 text-indigo-400" /> Latest Insights
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {digests.map((digest, i) => (
+            {isLoadingDigests ? (
+              <div className="col-span-full flex justify-center py-12">
+                <Loader2Icon className="w-8 h-8 animate-spin text-indigo-500" />
+              </div>
+            ) : digests.length === 0 ? (
+              <div className="col-span-full text-center text-neutral-500 py-12 bg-neutral-900/30 rounded-2xl border border-white/5">
+                No research digests found. Start tracking a topic above!
+              </div>
+            ) : digests.map((digest, i) => (
               <motion.div 
-                key={digest.id} 
+                key={digest.digest_id || i} 
                 initial={{ opacity: 0, y: 20 }} 
                 animate={{ opacity: 1, y: 0 }} 
                 transition={{ delay: i * 0.1, type: "spring", stiffness: 100 }}
@@ -100,20 +130,25 @@ export default function Home() {
                   <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                   <CardHeader>
                     <div className="flex justify-between items-start">
-                      <CardTitle className="text-lg text-white group-hover:text-indigo-300 transition-colors">{digest.topic}</CardTitle>
-                      <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{digest.confidence}% Quality</Badge>
+                      <CardTitle className="text-lg text-white group-hover:text-indigo-300 transition-colors">{digest.topic_id}</CardTitle>
+                      <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{digest.confidence || 90}% Quality</Badge>
                     </div>
-                    <CardDescription className="text-neutral-500">{digest.date}</CardDescription>
+                    <CardDescription className="text-neutral-500">
+                      {new Date(digest.created_at).toLocaleDateString()}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ul className="space-y-3 mb-6">
-                      {digest.findings.map((f, j) => (
+                      {digest.findings && digest.findings.slice(0, 3).map((f: string, j: number) => (
                         <li key={j} className="text-sm text-neutral-300 flex items-start gap-2">
-                          <span className="text-indigo-500 mt-0.5">•</span> {f}
+                          <span className="text-indigo-500 mt-0.5">•</span> {f.substring(0, 100)}{f.length > 100 ? '...' : ''}
                         </li>
                       ))}
+                      {digest.findings && digest.findings.length > 3 && (
+                         <li className="text-xs text-neutral-500 italic">...and {digest.findings.length - 3} more findings</li>
+                      )}
                     </ul>
-                    <Link href={`/runs/${digest.id}`}>
+                    <Link href={`/runs/${digest.run_id || digest.digest_id}`}>
                         <Button variant="outline" className="w-full bg-transparent border-white/10 hover:bg-neutral-800 hover:text-indigo-300 text-neutral-300 transition-all rounded-xl cursor-pointer">
                             View ReAct Traces
                             <ExternalLink className="w-4 h-4 ml-2 opacity-50" />

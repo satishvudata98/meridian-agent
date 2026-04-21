@@ -36,6 +36,8 @@ Resources:
               Action:
                 - bedrock:InvokeModel
               Resource: "*"
+        - DynamoDBCrudPolicy:
+            TableName: "ResearchDigests"
       Events:
         SQSQueueEvent:
           Type: SQS
@@ -61,8 +63,28 @@ Resources:
         - SQSSendMessagePolicy:
             QueueName: !GetAtt AgentRunQueue.QueueName
 
+  GetDigestsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../../backend/
+      Handler: lambdas.api.get_digests.lambda_handler
+      Runtime: python3.12
+      Timeout: 15
+      MemorySize: 128
+      FunctionUrlConfig:
+        AuthType: NONE
+      Environment:
+        Variables:
+          DIGESTS_TABLE: "ResearchDigests"
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBReadPolicy:
+            TableName: "ResearchDigests"
+
 Outputs:
   AgentRunQueueUrl:
     Value: !Ref AgentRunQueue
   AgentTriggerUrl:
     Value: !GetAtt AgentTriggerFunctionUrl.FunctionUrl
+  GetDigestsUrl:
+    Value: !GetAtt GetDigestsFunctionUrl.FunctionUrl
