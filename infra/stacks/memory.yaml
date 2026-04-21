@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AI Research Agent - Databases & Memory (RDS, Redis, S3)
+
+Resources:
+  # 1. S3 bucket for Raw Documents (Archiving HTML scrapes for observability)
+  RawDocumentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "meridian-agent-raw-docs-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # 2. Redis Cache for Rate Limiting / Quota management
+  AgentRateLimitCache:
+    Type: AWS::ElastiCache::ServerlessCache
+    Properties:
+      Engine: redis
+      ServerlessCacheName: ai-agent-rate-limit
+
+  # 3. PostgreSQL Database for Semantic Memory storage (pgvector)
+  # NOTE: In a mature multi-stack deploy, Security Groups and Subnets would be configured here.
+  AgentMemoryDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      EngineVersion: '16.3'
+      MasterUsername: agentadmin
+      # Security best practice: pulling password from Parameter Store at deploy time
+      MasterUserPassword: '{{resolve:ssm:/agent/db_password}}' 
+      PubliclyAccessible: false
+
+Outputs:
+  RawDocumentBucketName:
+    Value: !Ref RawDocumentBucket
