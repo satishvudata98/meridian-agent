@@ -41,6 +41,32 @@ Resources:
             Queue: !GetAtt AgentRunQueue.Arn
             BatchSize: 1
 
+  AgentTriggerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../../backend/
+      Handler: lambdas.api.trigger.lambda_handler
+      Runtime: python3.12
+      Timeout: 30
+      MemorySize: 128
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - POST
+            - OPTIONS
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref AgentRunQueue
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt AgentRunQueue.QueueName
+
 Outputs:
   AgentRunQueueUrl:
     Value: !Ref AgentRunQueue
+  AgentTriggerUrl:
+    Value: !GetAtt AgentTriggerFunctionUrl.FunctionUrl

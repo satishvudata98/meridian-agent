@@ -4,10 +4,52 @@ import { motion } from "framer-motion";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SearchIcon, ActivityIcon, PlusIcon, ExternalLink } from "lucide-react";
+import { SearchIcon, ActivityIcon, PlusIcon, ExternalLink, Loader2Icon } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Input } from "@/components/ui/input";
 
 export default function Home() {
+  const router = useRouter();
+  const [topicInput, setTopicInput] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleTrigger = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!topicInput.trim()) return;
+    
+    setIsSubmitting(true);
+    try {
+      // Note: Make sure NEXT_PUBLIC_TRIGGER_URL is set in your .env.local
+      const triggerUrl = process.env.NEXT_PUBLIC_TRIGGER_URL || "";
+      if (!triggerUrl) {
+          alert("Missing NEXT_PUBLIC_TRIGGER_URL. Please set it in your environment variables.");
+          setIsSubmitting(false);
+          return;
+      }
+      
+      const response = await fetch(triggerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic_name: topicInput })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        router.push(`/runs/${data.run_id}`);
+      } else {
+        const errorText = await response.text();
+        alert(`Failed to trigger: ${errorText}`);
+        setIsSubmitting(false);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error connecting to backend trigger endpoint.");
+      setIsSubmitting(false);
+    }
+  };
+
   // Mock data for the Scaffold - in production this fetches from our DynamoDB digest API
   const digests = [
     { id: "run-LLM500", topic: "LLM Agent Frameworks 2025", date: "April 21, 2026", confidence: 94, findings: ["Autonomous routing is standard", "Cost guardrails are key", "Bedrock usage surging"] },
@@ -27,11 +69,19 @@ export default function Home() {
               <p className="text-neutral-400 text-sm">Autonomous MLOps Research Pipeline</p>
             </div>
           </div>
-          <Link href="/">
-            <Button className="bg-indigo-600 hover:bg-indigo-500 transition-all active:scale-95 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] rounded-full px-6">
-              <PlusIcon className="w-4 h-4 mr-2" /> Track Topic
+          <form onSubmit={handleTrigger} className="flex gap-2">
+            <Input 
+              value={topicInput}
+              onChange={(e) => setTopicInput(e.target.value)}
+              placeholder="e.g. Next-gen AI Models" 
+              className="bg-neutral-800 border-white/10 text-white placeholder:text-neutral-500 min-w-[250px]"
+              disabled={isSubmitting}
+            />
+            <Button disabled={isSubmitting} type="submit" className="bg-indigo-600 hover:bg-indigo-500 transition-all active:scale-95 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] rounded-full px-6">
+              {isSubmitting ? <Loader2Icon className="w-4 h-4 mr-2 animate-spin" /> : <PlusIcon className="w-4 h-4 mr-2" />} 
+              {isSubmitting ? "Triggering..." : "Track Topic"}
             </Button>
-          </Link>
+          </form>
         </header>
 
         <section className="space-y-6">
