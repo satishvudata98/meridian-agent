@@ -13,3 +13,8 @@ Resources:
     Properties:
       Location: stacks/api.yaml
 
+  AgentStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: stacks/agent.yaml
+

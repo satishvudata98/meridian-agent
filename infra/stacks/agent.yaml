@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AI Research Agent - Orchestrator and SQS
+
+Resources:
+  AgentRunDeadLetterQueue:
+    Type: AWS::SQS::Queue
+
+  AgentRunQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      # Agents might run long, setting high visibility timeout (15 mins)
+      VisibilityTimeout: 900 
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AgentRunDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  AgentOrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../../backend/
+      Handler: lambdas.orchestrator.handler.lambda_handler
+      Runtime: python3.12
+      Timeout: 900
+      MemorySize: 256
+      Environment:
+        Variables:
+          # Will pull from SSM or environment overrides automatically in AWS
+          TAVILY_API_KEY: "{{resolve:ssm:TAVILY_API_KEY}}" 
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+      Events:
+        SQSQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt AgentRunQueue.Arn
+            BatchSize: 1
+
+Outputs:
+  AgentRunQueueUrl:
+    Value: !Ref AgentRunQueue
