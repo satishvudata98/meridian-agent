@@ -28,6 +28,10 @@ Resources:
   # Production stage deployment for the Websocket
   WebSocketStage:
     Type: AWS::ApiGatewayV2::Stage
+    DependsOn:
+      - ConnectRoute
+      - DisconnectRoute
+      - DefaultRoute
     Properties:
       ApiId: !Ref WebSocketApi
       StageName: prod

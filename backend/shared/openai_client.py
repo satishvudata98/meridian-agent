@@ -31,7 +31,47 @@ class OpenAIClient:
             formatted_messages.append({"role": "system", "content": system})
         
         for msg in messages:
-             formatted_messages.append(msg)
+            role = msg.get("role")
+            content = msg.get("content", [])
+            
+            # If content is a simple string, it's already generic
+            if isinstance(content, str):
+                formatted_messages.append({"role": role, "content": content})
+                continue
+                
+            # If content is a list of blocks, we need to translate Bedrock/Anthropic format to OpenAI
+            if role == "user":
+                # User messages might contain text blocks or tool_result blocks
+                for block in content:
+                    if block.get("type") == "text":
+                        formatted_messages.append({"role": "user", "content": block.get("text")})
+                    elif block.get("type") == "tool_result":
+                        formatted_messages.append({
+                            "role": "tool",
+                            "tool_call_id": block.get("tool_use_id"),
+                            "content": block.get("content")
+                        })
+            elif role == "assistant":
+                # Assistant messages might contain text blocks or tool_use blocks
+                openai_content = ""
+                tool_calls = []
+                for block in content:
+                    if block.get("type") == "text":
+                        openai_content += block.get("text") + "\n"
+                    elif block.get("type") == "tool_use":
+                        tool_calls.append({
+                            "id": block.get("id"),
+                            "type": "function",
+                            "function": {
+                                "name": block.get("name"),
+                                "arguments": json.dumps(block.get("input"))
+                            }
+                        })
+                
+                assistant_msg = {"role": "assistant", "content": openai_content.strip() or None}
+                if tool_calls:
+                    assistant_msg["tool_calls"] = tool_calls
+                formatted_messages.append(assistant_msg)
              
         kwargs = {
             "model": model_id,
@@ -75,9 +115,17 @@ class OpenAIClient:
                      "input": json.loads(tool_call.function.arguments)
                  })
                  
+        # Determine stop reason
+        stop_reason = "end_turn"
+        if message.tool_calls:
+            stop_reason = "tool_use"
+        elif response.choices[0].finish_reason == "length":
+            stop_reason = "max_tokens"
+            
         return {
              "content": content,
-             "role": "assistant"
+             "role": "assistant",
+             "stop_reason": stop_reason
         }
 
     def embed(self, text: str) -> list:
