@@ -3,3 +3,4 @@ anthropic
 psycopg2-binary
 redis
 tavily-python
+aws-xray-sdk

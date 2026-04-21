@@ -23,3 +23,8 @@ Resources:
     Properties:
       Location: stacks/memory.yaml
 
+  ObservabilityStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: stacks/observability.yaml
+

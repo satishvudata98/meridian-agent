@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AI Research Agent - Observability and Guardrails
+
+Resources:
+  # SNS Topic for Cost Alarms
+  CostAlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: ai-agent-cost-alarms
+
+  # Nightly EventBridge Rule triggering the Lambda
+  CostGuardrailSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "Daily trigger to run the Cost Guardrail Lambda"
+      ScheduleExpression: "rate(1 day)"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CostGuardrailFunction.Arn
+          Id: "CostGuardrailDailyTarget"
+
+  CostGuardrailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../../backend/
+      Handler: lambdas.guardrail.handler.lambda_handler
+      Runtime: python3.12
+      Timeout: 60
+      MemorySize: 128
+      Environment:
+        Variables:
+          DAILY_SPEND_LIMIT_USD: "5.0"
+          ALARM_SNS_TOPIC_ARN: !Ref CostAlarmTopic
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:GetMetricStatistics
+                - sns:Publish
+              Resource: "*"
+
+  GuardrailInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CostGuardrailFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CostGuardrailSchedule.Arn
+
+Outputs:
+  AlarmTopicArn:
+    Value: !Ref CostAlarmTopic

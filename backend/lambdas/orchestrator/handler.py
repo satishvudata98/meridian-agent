@@ -5,13 +5,26 @@ import json
 # Allow relative imports from the shared folder when running in Lambda
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
+from aws_xray_sdk.core import xray_recorder
+from aws_xray_sdk.core import patch_all
+
+# Patch all libraries (boto3, requests) for X-Ray tracing
+patch_all()
+
 from shared.bedrock_client import BedrockClient
 from shared.tool_schemas import TOOL_SCHEMAS
 from shared.tool_executor import ToolExecutor
+from shared.metrics_publisher import MetricsPublisher
 
+@xray_recorder.capture('run_agent_loop')
 def run_agent(topic: dict, run_id: str) -> dict:
     bedrock = BedrockClient()
     executor = ToolExecutor(bedrock_client=bedrock)
+    metrics = MetricsPublisher()
+    
+    # Store annotations for AWS X-Ray Filtering
+    xray_recorder.put_annotation("topic_id", topic.get('name', 'Unknown'))
+    xray_recorder.put_annotation("run_id", run_id)
     
     max_steps = 10
     system_prompt = f"""You are an autonomous research agent. Your job is to thoroughly research the topic: {topic.get('name', 'General')}.
