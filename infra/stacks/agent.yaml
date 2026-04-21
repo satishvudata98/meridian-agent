@@ -27,6 +27,8 @@ Resources:
         Variables:
           # Will pull from SSM or environment overrides automatically in AWS
           TAVILY_API_KEY: "{{resolve:ssm:TAVILY_API_KEY}}" 
+          OPENAI_API_KEY: "{{resolve:ssm:OPENAI_API_KEY}}"
+          LLM_PROVIDER: "openai"
       Policies:
         - AWSLambdaBasicExecutionRole
         - Statement:
