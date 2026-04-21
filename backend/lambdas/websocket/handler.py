@@ -15,7 +15,8 @@ def lambda_handler(event, context):
 
     if route_key == '$connect':
         # Safely extract runId from the frontend WebSocket query string params
-        run_id = event.get('queryStringParameters', {}).get('runId', 'default_run')
+        qs = event.get('queryStringParameters') or {}
+        run_id = qs.get('runId', 'default_run')
         
         try:
             table.put_item(Item={
