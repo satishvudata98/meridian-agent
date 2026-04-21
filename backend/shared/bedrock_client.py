@@ -34,3 +34,21 @@ class BedrockClient:
         )
         # Assuming we just return the full response body content, standard Bedrock format
         return json.loads(response["body"].read())
+
+    def embed(self, text: str) -> list:
+        """Generate vector embedding using Amazon Titan Embeddings v2"""
+        # Titan Embeddings v2 model ID
+        model_id = "amazon.titan-embed-text-v2:0"
+        
+        body = {
+            "inputText": text,
+            "dimensions": 1536,
+            "normalize": True
+        }
+        
+        response = self.client.invoke_model(
+            modelId=model_id,
+            body=json.dumps(body)
+        )
+        response_body = json.loads(response["body"].read())
+        return response_body.get("embedding", [])

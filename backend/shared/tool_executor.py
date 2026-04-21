@@ -3,7 +3,7 @@ import os
 from tavily import TavilyClient
 
 class ToolExecutor:
-    def __init__(self, bedrock_client=None, memory_store=None):
+    def __init__(self, llm_client=None, memory_store=None):
         # Initializing the tool dependencies
         # Note: TAVILY_API_KEY must be accessible in system env params for lambda
         try:
@@ -11,7 +11,7 @@ class ToolExecutor:
         except Exception:
              self.tavily_client = None
 
-        self.bedrock = bedrock_client
+        self.llm = llm_client
         self.memory = memory_store
 
     def execute(self, tool_name, tool_input):
@@ -45,19 +45,27 @@ class ToolExecutor:
         url = args.get("url")
         focus = args.get("focus", "general")
         # In a real deployed version, we fetch the URL using requests, extract HTML via BeautifulSoup,
-        # and then pass the text to our `bedrock_client.fast_call` to summarise.
+        # and then pass the text to our `llm_client.fast_call` to summarise.
         # This acts as our foundational placeholder.
         return f"SIMULATION: Summarized content of {url} focusing on {focus}."
 
     def _save_to_memory(self, args):
-        if self.memory:
-            return self.memory.save(args.get("content"), args.get("topic_id"), args.get("source_url"))
-        return "Memory Store not initialized."
+        if self.memory and self.llm:
+            content = args.get("content")
+            topic_id = args.get("topic_id")
+            source_url = args.get("source_url")
+            embedding = self.llm.embed(content)
+            return self.memory.save(content, topic_id, embedding, source_url)
+        return "Memory Store or LLM Client not initialized."
 
     def _search_memory(self, args):
-        if self.memory:
-            return self.memory.search(args.get("query"), args.get("topic_id"), args.get("limit", 3))
-        return "Memory Store not initialized."
+        if self.memory and self.llm:
+            query = args.get("query")
+            topic_id = args.get("topic_id")
+            limit = args.get("limit", 3)
+            query_embedding = self.llm.embed(query)
+            return self.memory.search(topic_id, query_embedding, limit)
+        return "Memory Store or LLM Client not initialized."
 
     def _create_digest(self, args):
         # In a real flow, this triggers the SQS or DB write to log the finished digest.

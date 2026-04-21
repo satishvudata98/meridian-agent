@@ -11,15 +11,15 @@ from aws_xray_sdk.core import patch_all
 # Patch all libraries (boto3, requests) for X-Ray tracing
 patch_all()
 
-from shared.bedrock_client import BedrockClient
+from shared.llm_factory import get_llm_client
 from shared.tool_schemas import TOOL_SCHEMAS
 from shared.tool_executor import ToolExecutor
 from shared.metrics_publisher import MetricsPublisher
 
 @xray_recorder.capture('run_agent_loop')
 def run_agent(topic: dict, run_id: str) -> dict:
-    bedrock = BedrockClient()
-    executor = ToolExecutor(bedrock_client=bedrock)
+    llm = get_llm_client()
+    executor = ToolExecutor(llm_client=llm)
     metrics = MetricsPublisher()
     
     # Store annotations for AWS X-Ray Filtering
@@ -45,7 +45,7 @@ def run_agent(topic: dict, run_id: str) -> dict:
         # In a real app, publish a WebSocket event so the Frontend can show a live terminal UI
         # publish_ws_event(run_id, {"step": step, "status": "thinking"})
 
-        response = bedrock.fast_call(messages, system=system_prompt, tools=TOOL_SCHEMAS)
+        response = llm.fast_call(messages, system=system_prompt, tools=TOOL_SCHEMAS)
         
         stop_reason = response.get("stop_reason")
         response_content = response.get("content", [])
