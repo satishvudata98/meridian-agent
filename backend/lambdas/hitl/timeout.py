@@ -52,6 +52,8 @@ def lambda_handler(event, context):
                     "run_id": run_id,
                     "topic_name": item.get('topic_name', 'Unknown'),
                     "human_answer": timeout_answer,
+                    "phase": item.get('phase', 'researching'),
+                    "pending_tool_use_id": item.get('pending_tool_use_id', ''),
                     "messages": item.get('messages', '[]')
                 })
             )

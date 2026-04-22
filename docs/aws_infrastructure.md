@@ -51,7 +51,7 @@ DynamoDB tables:
 - `ResearchTopics`: keyed by `topic_id`, with `UserTopicsIdx`.
 - `ResearchDigests`: keyed by `digest_id`, with `TopicDigestsIdx`.
 - `AgentConnections`: keyed by `connection_id`, with `RunConnectionsIdx` for WebSocket broadcast lookup.
-- `AgentPausedState`: keyed by `run_id`, with `StatusExpiresIdx` for timeout scans and TTL enabled on `ttl`.
+- `AgentPausedState`: keyed by `run_id`, stores paused conversation state, phase, pending tool-call ID, question/context, with `StatusExpiresIdx` for timeout scans and TTL enabled on `ttl`.
 
 Most tables use on-demand billing. PITR is enabled on run/topic/digest tables. HITL paused state uses TTL for cleanup.
 

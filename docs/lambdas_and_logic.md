@@ -58,7 +58,7 @@ Responsibility: run the autonomous agent loop.
 Inputs:
 
 - SQS fresh-run message: `{ "topic_name": "...", "run_id": "..." }`
-- SQS HITL resume message: `{ "type": "hitl_resume", "run_id": "...", "topic_name": "...", "human_answer": "...", "messages": "..." }`
+- SQS HITL resume message: `{ "type": "hitl_resume", "run_id": "...", "topic_name": "...", "human_answer": "...", "phase": "...", "pending_tool_use_id": "...", "messages": "..." }`
 
 Flow:
 
@@ -79,7 +79,8 @@ Key behavior:
 
 - The model is prodded if it tries to end before submitting a digest.
 - The WebSocket stream emits thinking, tool-use, paused, and completed events.
-- The loop's max-step-completed message still says 15, but the actual limit in code is 25.
+- HITL resume reconstructs the pending `ask_human_guidance` call as a matching `tool_result` before calling the model again.
+- Older paused records without `pending_tool_use_id` are handled by locating unanswered tool calls in the saved messages.
 
 ### 2.2 Code Executor Function
 
@@ -118,7 +119,7 @@ Flow:
 3. Returns `404` if no paused run exists.
 4. Returns `409` if the run is not awaiting input.
 5. Updates status to `resumed` to prevent double-submit.
-6. Sends a `hitl_resume` message to SQS with saved messages and the human answer.
+6. Sends a `hitl_resume` message to SQS with saved messages, saved phase, pending tool-call ID, and the human answer.
 7. Returns a success response to the UI.
 
 ### 3.2 HITL Timeout Function
@@ -133,7 +134,7 @@ Flow:
 
 1. Queries `AgentPausedState.StatusExpiresIdx` for `status == "awaiting_input"` and `expires_at < now`.
 2. Marks each stale run as `timed_out`.
-3. Sends a `hitl_resume` SQS message with a timeout instruction.
+3. Sends a `hitl_resume` SQS message with the saved phase, pending tool-call ID, and a timeout instruction.
 4. Returns the count of processed paused runs.
 
 ## 4. WebSocket Lambda
@@ -196,6 +197,7 @@ Dispatches tool calls and implements the side effects:
 - DynamoDB digest writes
 - code sandbox invocation
 - HITL state persistence and WebSocket notification
+- Stores the current agent phase and pending tool-call ID so manual and timeout resumes can continue with a valid tool-result message.
 
 
 ### 6.3 LLM Factory And Clients

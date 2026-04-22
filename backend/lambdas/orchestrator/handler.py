@@ -18,8 +18,41 @@ from shared.tool_executor import ToolExecutor
 from shared.metrics_publisher import MetricsPublisher
 from shared.memory_store import MemoryStore
 
+VALID_PHASES = {"planning", "researching", "writing"}
+
+def _find_unanswered_tool_uses(messages: list) -> list:
+    """Return tool_use blocks that do not yet have matching tool_result blocks."""
+    tool_uses = []
+    answered_ids = set()
+
+    for msg in messages:
+        content = msg.get("content", [])
+        if not isinstance(content, list):
+            continue
+
+        if msg.get("role") == "assistant":
+            for block in content:
+                if block.get("type") == "tool_use" and block.get("id"):
+                    tool_uses.append({
+                        "id": block["id"],
+                        "name": block.get("name", "")
+                    })
+        elif msg.get("role") == "user":
+            for block in content:
+                if block.get("type") == "tool_result" and block.get("tool_use_id"):
+                    answered_ids.add(block["tool_use_id"])
+
+    return [tool_use for tool_use in tool_uses if tool_use["id"] not in answered_ids]
+
 @xray_recorder.capture('run_agent_loop')
-def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answer: str = None) -> dict:
+def run_agent(
+    topic: dict,
+    run_id: str,
+    resume_messages: list = None,
+    human_answer: str = None,
+    resume_phase: str = None,
+    pending_tool_use_id: str = None
+) -> dict:
     llm = get_llm_client()
     
     # Initialize long-term vector memory. Gracefully skip if DB is unreachable.
@@ -90,7 +123,7 @@ def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answ
     
     # Increased to 25 to accommodate Research + Code Sandbox + Self-Critique loops
     max_steps = 25
-    current_phase = "planning"
+    current_phase = resume_phase if resume_phase in VALID_PHASES else "planning"
     digest_submitted = False
     
     def get_system_prompt(phase):
@@ -108,15 +141,53 @@ def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answ
     # On fresh run: start with the initial research prompt.
     if resume_messages:
         messages = resume_messages
-        # Inject the human's answer as a tool_result so the agent understands what was said
-        messages.append({
-            "role": "user",
-            "content": [{
-                "type": "text",
-                "text": f"[HUMAN GUIDANCE RECEIVED]: {human_answer}\n\nNow continue your research and produce the final digest."
-            }]
-        })
-        print(f"Resuming HITL run {run_id} with human answer: {human_answer[:80]}...")
+        guidance = (
+            f"HUMAN GUIDANCE RECEIVED:\n{human_answer}\n\n"
+            "Continue from the paused state. Apply this guidance, continue research if needed, "
+            "and produce the final digest."
+        )
+        unanswered_tool_uses = _find_unanswered_tool_uses(messages)
+        unanswered_ids = {tool_use["id"] for tool_use in unanswered_tool_uses}
+        if pending_tool_use_id and pending_tool_use_id not in unanswered_ids:
+            unanswered_tool_uses.append({
+                "id": pending_tool_use_id,
+                "name": "ask_human_guidance"
+            })
+
+        if unanswered_tool_uses:
+            guidance_applied = False
+            tool_results = []
+            for tool_use in unanswered_tool_uses:
+                should_apply_guidance = (
+                    tool_use["id"] == pending_tool_use_id
+                    or (not guidance_applied and tool_use.get("name") == "ask_human_guidance")
+                    or (not guidance_applied and not pending_tool_use_id)
+                )
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_use["id"],
+                    "content": guidance if should_apply_guidance else "Tool skipped because the run paused for human guidance. Continue from the saved state."
+                })
+                if should_apply_guidance:
+                    guidance_applied = True
+
+            messages.append({
+                "role": "user",
+                "content": tool_results
+            })
+        else:
+            # Backward-compatible fallback for older paused records that did not save a tool id.
+            messages.append({
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": guidance
+                }]
+            })
+        print(
+            f"Resuming HITL run {run_id} in phase {current_phase} "
+            f"with human answer: {(human_answer or '')[:80]}..."
+        )
     else:
         messages = [
             {
@@ -167,11 +238,15 @@ def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answ
                 if block.get("type") == "tool_use":
                     tool_name = block["name"]
                     tool_input = block["input"]
+                    execution_input = dict(tool_input or {})
                     tool_id = block["id"]
                     
                     # Phase transitions and Tool Dispatch
                     if tool_name == "create_research_plan" and current_phase == "planning":
                         current_phase = "researching"
+                    elif tool_name == "ask_human_guidance":
+                        execution_input["_tool_use_id"] = tool_id
+                        execution_input["_phase"] = current_phase
                         
                     publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "tool_use", "tool": tool_name, "message": f"Using tool {tool_name}..."})
                         
@@ -183,10 +258,10 @@ def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answ
                             print(" -> Intercepted create_digest for Critic review.")
                         else:
                             # Actually execute it on the second try
-                            result = executor.execute(tool_name, tool_input)
+                            result = executor.execute(tool_name, execution_input)
                             print(f" -> Tool result snippet: {str(result)[:100]}...")
                     else:
-                        result = executor.execute(tool_name, tool_input)
+                        result = executor.execute(tool_name, execution_input)
                         
                     # HITL Pause: agent saved its state and wants to exit cleanly
                     if str(result) == "__HITL_PAUSE__":
@@ -219,7 +294,7 @@ def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answ
 
     # If we reached the end of the loop without the break in tool_use
     if step == max_steps - 1:
-        publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "completed", "message": "Agent reached maximum step limit (15) and stopped."})
+        publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "completed", "message": f"Agent reached maximum step limit ({max_steps}) and stopped."})
 
     return {"run_id": run_id, "steps_taken": step + 1, "status": "completed"}
 
@@ -238,7 +313,9 @@ def lambda_handler(event, context):
             result = run_agent(
                 topic, run_id,
                 resume_messages=saved_messages,
-                human_answer=human_answer
+                human_answer=human_answer,
+                resume_phase=body.get("phase", "researching"),
+                pending_tool_use_id=body.get("pending_tool_use_id", "")
             )
         else:
             topic = {"name": body.get("topic_name", "Unknown")}

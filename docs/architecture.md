@@ -31,11 +31,11 @@ The backend intentionally separates fast user-facing HTTP requests from slower a
 ### 2.2 Human-In-The-Loop Resume Flow
 
 1. During research, the agent may call `ask_human_guidance` when it encounters genuine ambiguity.
-2. `ToolExecutor._ask_human_guidance()` writes a snapshot of the conversation to `AgentPausedState`, stores a 2-hour response deadline, and broadcasts a pause event over WebSocket.
+2. `ToolExecutor._ask_human_guidance()` writes a snapshot of the conversation to `AgentPausedState`, stores the current phase and pending tool-call ID, sets a 2-hour response deadline, and broadcasts a pause event over WebSocket.
 3. The run page shows a guidance input. The dashboard also surfaces paused runs as "Awaiting Guidance" cards.
 4. The user submits an answer to `NEXT_PUBLIC_HITL_RESUME_URL`.
 5. `HITLResumeFunction` marks the paused state as resumed and sends a `hitl_resume` message back to `AgentRunQueue`.
-6. The orchestrator restores the saved messages, appends the human answer, and continues the agent loop.
+6. The orchestrator restores the saved messages, converts the human answer or timeout instruction into the matching `tool_result`, restores the saved phase, and continues the agent loop.
 7. `HITLTimeoutFunction` runs every 30 minutes and auto-resumes stale paused runs after the 2-hour response window.
 
 ## 3. Agent Loop Design
@@ -71,7 +71,7 @@ The current SAM templates create Lambda Function URLs for the primary HTTP actio
 
 - `ResearchDigests`: final structured reports with `digest_id`, `run_id`, `topic_id`, executive summary, detailed analysis, citations, confidence, and `created_at`.
 - `AgentConnections`: WebSocket `connection_id` to `run_id` mapping, with `RunConnectionsIdx` for broadcast lookup.
-- `AgentPausedState`: HITL pause snapshots keyed by `run_id`, with a `StatusExpiresIdx` GSI and TTL cleanup.
+- `AgentPausedState`: HITL pause snapshots keyed by `run_id`, including `phase`, `pending_tool_use_id`, serialized messages, a `StatusExpiresIdx` GSI, and TTL cleanup.
 - `AgentRuns` and `ResearchTopics`: provisioned tables for future run/topic management.
 - PostgreSQL `memories` table: initialized by `MemoryStore` when `DB_HOST` is available, with pgvector embedding search.
 

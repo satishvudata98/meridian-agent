@@ -39,7 +39,7 @@ The first `create_digest` attempt during the research phase is intercepted. The 
 
 ### 1.7 Human-In-The-Loop Guidance
 
-If the agent needs a human decision, `ask_human_guidance` saves the run state to `AgentPausedState`, broadcasts an awaiting-input event, and exits the Lambda cleanly. The run page lets the user submit an answer. `HITLResumeFunction` loads the saved state and requeues the run as `hitl_resume`.
+If the agent needs a human decision, `ask_human_guidance` saves the run state to `AgentPausedState`, including the current phase and pending tool-call ID, broadcasts an awaiting-input event, and exits the Lambda cleanly. The run page lets the user submit an answer. `HITLResumeFunction` loads the saved state and requeues the run as `hitl_resume`.
 
 ### 1.8 HITL Timeout Auto-Resume
 
@@ -81,13 +81,13 @@ Important: the metric publishing helper exists, but the orchestrator does not cu
 ## 3. HITL Workflow
 
 1. The model calls `ask_human_guidance` with a question and context.
-2. The tool stores `run_id`, `topic_name`, question, context, status, expiry times, TTL, and serialized messages in `AgentPausedState`.
+2. The tool stores `run_id`, `topic_name`, `phase`, `pending_tool_use_id`, question, context, status, expiry times, TTL, and serialized messages in `AgentPausedState`.
 3. A WebSocket `awaiting_human_input` event is emitted.
 4. The frontend displays the HITL answer card on `/runs/[run_id]`.
 5. The dashboard also includes the paused run in latest insights.
 6. The user posts an answer through `NEXT_PUBLIC_HITL_RESUME_URL`.
-7. `HITLResumeFunction` marks the paused run as resumed and queues a `hitl_resume` message.
-8. The orchestrator restores the message history, appends the human answer, and continues.
+7. `HITLResumeFunction` marks the paused run as resumed and queues a `hitl_resume` message with the saved phase and pending tool-call ID.
+8. The orchestrator restores the message history, appends the human answer as the matching `tool_result`, restores the phase, and continues.
 9. If the user never answers, the timeout Lambda auto-resumes the run after the response window expires.
 
 ## 4. Code Execution Workflow
@@ -122,7 +122,7 @@ The dashboard expects these public environment variables:
 ## 7. Feature Status Notes
 
 - Real-time run traces are implemented as operational event streaming.
-- HITL state save, manual resume, and timeout resume are implemented.
+- HITL state save, manual resume, and timeout resume are implemented with valid tool-result reconstruction for OpenAI-style tool calls.
 - Plan-first and critic-gated writing are implemented.
 - Vector memory is implemented when PostgreSQL and pgvector are reachable.
 - Code execution is implemented with basic controls.

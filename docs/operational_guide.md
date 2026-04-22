@@ -88,6 +88,8 @@ Paused state is stored in `AgentPausedState`. The expected statuses are:
 
 The user has a 2-hour response window. `HITLTimeoutFunction` runs every 30 minutes and resumes stale pauses automatically. TTL is enabled for table hygiene using the `ttl` attribute.
 
+Each pause record also stores the current phase and the pending `ask_human_guidance` tool-call ID. Manual and timeout resumes use that ID to append the human answer as the matching `tool_result`, which keeps OpenAI-style tool-call history valid after the Lambda has exited.
+
 ### 4.4 WebSocket Streaming
 
 The run trace depends on three pieces:

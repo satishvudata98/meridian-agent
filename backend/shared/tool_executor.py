@@ -180,6 +180,8 @@ class ToolExecutor:
         import time
         question = args.get("question", "")
         context = args.get("context", "")
+        pending_tool_use_id = args.get("_tool_use_id")
+        phase = args.get("_phase", "researching")
         
         hitl_table = os.environ.get("HITL_TABLE", "AgentPausedState")
         ws_endpoint = os.environ.get("WS_API_ENDPOINT", "")
@@ -194,6 +196,8 @@ class ToolExecutor:
             table.put_item(Item={
                 "run_id": self.run_id or "unknown",
                 "topic_name": self.topic_name or "Unknown",
+                "phase": phase,
+                "pending_tool_use_id": pending_tool_use_id or "",
                 "question": question,
                 "context": context,
                 "status": "awaiting_input",
