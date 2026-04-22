@@ -1,52 +1,156 @@
-# Operational Guide and Best Practices
+# Operational Guide And Best Practices
 
-This document outlines how to operate, monitor, and scale the application, detailing edge cases, error handling, and core AWS concepts developers need to master.
+Last updated: 2026-04-22
 
-## 1. Edge Cases and Operational Considerations
+This guide covers setup, deployment, runtime checks, and operational risks for the current Meridian Agent app.
 
-### 1.1 Long-Running Agents and Timeouts
-*   **The Problem**: AI generation is slow. A deep research task requiring multiple web searches and syntheses can easily exceed standard API timeouts (usually 30 seconds).
-*   **The Mitigation**: The architecture uses an asynchronous SQS queue. The API Gateway returns immediately, while the backend Orchestrator Lambda is configured with a maximum `Timeout` of 900 seconds (15 minutes).
-*   **Critical Setting**: The SQS `VisibilityTimeout` is *also* set to 900 seconds. If an Orchestrator Lambda picks up a message, SQS hides that message from other Lambdas for 15 minutes. If the Orchestrator crashes or times out before 15 minutes, the message becomes visible again, triggering an automatic retry. If `VisibilityTimeout` was shorter than the Lambda timeout, a second Lambda might pick up the same job while the first is still working on it, duplicating effort and costs.
+## 1. Required Configuration
 
-### 1.2 "Poison Pill" Messages
-*   **The Problem**: A user inputs a specific topic that causes the LLM to output malformed JSON, or causes a crash in the Python code. SQS will retry this message indefinitely, resulting in an infinite loop of crashes and high AWS bills.
-*   **The Mitigation**: A Dead Letter Queue (DLQ). The `AgentRunQueue` is configured with a `RedrivePolicy` and `maxReceiveCount: 3`. If a message fails processing 3 times in a row, SQS automatically moves it to the `AgentRunDeadLetterQueue`. Engineers can then inspect this DLQ manually to debug the issue without affecting the live system.
+### 1.1 AWS And Third-Party Prerequisites
 
-### 1.3 Unbounded Costs (LLM Loops)
-*   **The Problem**: An autonomous ReAct agent might get confused and loop endlessly between requesting tools and reading outputs without ever calling the `create_digest` exit tool.
-*   **The Mitigation**:
-    1.  **Code Level**: A hard limit of `max_steps = 10` is enforced in `orchestrator/handler.py`.
-    2.  **Infrastructure Level**: The `CostGuardrailFunction` acts as a circuit breaker. It runs daily via EventBridge, checking CloudWatch for custom cost metrics. If daily spend exceeds the predefined threshold (e.g., $5.00), it fires a critical SNS alert to administrators.
+- AWS account with permission to deploy SAM/CloudFormation stacks.
+- AWS SAM CLI and AWS CLI configured locally.
+- Node.js compatible with the Next.js frontend.
+- Python 3.12 compatible build/deploy environment for Lambda dependencies.
+- Tavily API key for web search.
+- OpenAI API key if using the default `LLM_PROVIDER=openai`.
+- Bedrock model access if switching `LLM_PROVIDER=bedrock`.
 
-### 1.4 Rate Limiting External APIs
-*   **The Problem**: The `web_search` tool relies on the Tavily API, which has strict rate limits. If 100 users trigger agents simultaneously, Tavily will block the requests.
-*   **The Mitigation**: The `RateLimiter` class (`backend/shared/rate_limiter.py`) implements a Sliding Window algorithm using Redis (ElastiCache). Before making an external API call, the Orchestrator checks the Redis cache. The sliding window guarantees that no more than `X` requests occur within a rolling `Y` second window, smoothly throttling the agents.
+### 1.2 SSM Parameters
 
-## 2. Error Handling and Retries
-*   **API Gateway (Synchronous)**: The Trigger and Get Digests APIs wrap logic in `try/except` blocks and return HTTP 500 status codes with CORS headers if failures occur.
-*   **SQS/Lambda (Asynchronous)**: If an exception is raised in the Orchestrator, the Lambda function fails. AWS Lambda automatically leaves the message in the SQS queue. SQS handles the retry logic based on the `VisibilityTimeout`.
-*   **Third-Party APIs (Tavily/OpenAI)**: External calls inside the tool system must be wrapped in `try/except` blocks. If Tavily fails, the tool should return an error string *to the LLM* (e.g., `"Tool failed: Rate limit exceeded"`). The LLM can then intelligently decide to wait and try again, or try a different strategy, rather than crashing the whole Python script.
+The SAM templates resolve these parameters during deployment:
 
-## 3. AWS Learning Guide (For Developers)
+- `TAVILY_API_KEY`
+- `OPENAI_API_KEY`
+- `/agent/db_password`
+- `WS_API_ENDPOINT`
 
-To confidently build, maintain, and scale this system, developers must master the following AWS concepts:
+`WS_API_ENDPOINT` should be set to the deployed WebSocket URL, for example `wss://<api-id>.execute-api.<region>.amazonaws.com/prod`.
 
-### 3.1 Identity and Access Management (IAM)
-*   **Concept**: *Execution Roles*. Every Lambda function has an associated IAM Role. A Lambda can only access resources explicitly allowed by this role.
-*   **Why it matters here**: If you add a new S3 bucket to save raw text files, the Orchestrator Lambda will fail with an `AccessDeniedException` until you update `agent.yaml` to include an `S3CrudPolicy` for that specific bucket.
+### 1.3 Frontend Environment
 
-### 3.2 DynamoDB Access Patterns
-*   **Concept**: *Partition Keys and Global Secondary Indexes (GSIs)*. DynamoDB is not a relational database. You cannot run complex SQL `WHERE` queries easily.
-*   **Why it matters here**: To get all connections for a specific run, you cannot just filter the main table. The `data.yaml` stack explicitly creates a `RunConnectionsIdx` GSI. You must query this index. Understanding GSIs is crucial for adding new features.
+Set these variables for the Next.js app:
 
-### 3.3 Serverless Application Model (SAM)
-*   **Concept**: *Intrinsic Functions*. SAM uses YAML templates to define infrastructure.
-*   **Why it matters here**: You must understand how to link resources dynamically. 
-    *   `!Ref ResourceName` gets the ID of a resource.
-    *   `!GetAtt ResourceName.Arn` gets the Amazon Resource Name.
-    *   `!Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:..."` allows string interpolation for building complex resource locators.
+- `NEXT_PUBLIC_TRIGGER_URL`: `AgentTriggerUrl` stack output.
+- `NEXT_PUBLIC_GET_DIGESTS_URL`: `GetDigestsUrl` stack output.
+- `NEXT_PUBLIC_WS_URL`: `WebSocketApiUrl` stack output.
+- `NEXT_PUBLIC_HITL_RESUME_URL`: `HITLResumeUrl` stack output.
 
-### 3.4 Distributed Tracing with AWS X-Ray
-*   **Concept**: *Tracing across boundaries*. Standard logging is insufficient for serverless apps because a single request jumps across API Gateway, SQS, multiple Lambdas, and DynamoDB.
-*   **Why it matters here**: The `orchestrator/handler.py` patches the `boto3` library (`patch_all()`). This means every time the agent talks to DynamoDB or Bedrock, X-Ray records the exact milliseconds it took. Furthermore, the code uses `xray_recorder.put_annotation("run_id", run_id)`. This allows developers to go to the AWS Console, type `annotation.run_id = "run_123"`, and instantly see the entire visual flowchart of what happened for that specific user request.
+## 2. Deployment Checklist
+
+1. Configure AWS credentials.
+2. Create required SSM parameters.
+3. Deploy the SAM root template from `infra/template.yaml`.
+4. Copy CloudFormation outputs into frontend environment variables.
+5. Deploy or run the Next.js frontend.
+6. Submit a topic from the dashboard.
+7. Confirm the trigger Lambda returns a `run_id`.
+8. Open `/runs/[run_id]` and confirm WebSocket connection status.
+9. Wait for the orchestrator to produce a completion event or HITL pause.
+10. Confirm completed reports appear on the dashboard and open in `/digests/[digest_id]`.
+
+## 3. Local Frontend Development
+
+From `frontend/`:
+
+```bash
+npm install
+npm run dev
+```
+
+The frontend is useful locally when pointed at deployed AWS Lambda Function URLs and the deployed WebSocket API. Without those environment variables, the UI will load but cannot trigger real backend work.
+
+## 4. Runtime Operations
+
+### 4.1 Long-Running Agents
+
+The orchestrator has a 900-second Lambda timeout, and `AgentRunQueue` uses a 900-second visibility timeout. This keeps one long-running agent from being picked up by a second Lambda while it is still processing.
+
+The code-level agent loop limit is 25 steps. If the model tries to finish before calling `create_digest`, the orchestrator adds a prompt telling it to submit a final digest or ask for human guidance.
+
+### 4.2 Failed Orchestrator Runs
+
+If the orchestrator raises an exception, Lambda reports the SQS batch as failed. SQS retries the message. After 3 failed receives, the message moves to `AgentRunDeadLetterQueue`.
+
+Operational response:
+
+- Inspect CloudWatch logs for `AgentOrchestratorFunction`.
+- Inspect the DLQ payload.
+- Check external dependencies: OpenAI/Bedrock credentials, Tavily key, RDS connectivity, VPC/NAT egress, and DynamoDB permissions.
+
+### 4.3 Human-In-The-Loop Pauses
+
+Paused state is stored in `AgentPausedState`. The expected statuses are:
+
+- `awaiting_input`
+- `resumed`
+- `timed_out`
+
+The user has a 2-hour response window. `HITLTimeoutFunction` runs every 30 minutes and resumes stale pauses automatically. TTL is enabled for table hygiene using the `ttl` attribute.
+
+### 4.4 WebSocket Streaming
+
+The run trace depends on three pieces:
+
+- the frontend connects to `NEXT_PUBLIC_WS_URL?runId=<run_id>`
+- `$connect` stores the mapping in `AgentConnections`
+- the orchestrator has `WS_API_ENDPOINT` and `execute-api:ManageConnections` permission
+
+If traces do not appear, check the WebSocket manager logs, `AgentConnections`, and the orchestrator logs for broadcast errors.
+
+### 4.5 Vector Memory
+
+Memory is optional at runtime. If `DB_HOST` is missing or PostgreSQL is unreachable, the orchestrator logs a warning and continues without memory.
+
+If memory tools fail:
+
+- verify RDS is deployed and healthy
+- verify the Lambda private subnet routing through NAT if external API calls are also failing
+- verify the database security group allows inbound 5432 from the Lambda security group
+- verify `/agent/db_password`
+- verify pgvector can be created in the database
+
+### 4.6 Code Execution
+
+The deployed `execute_code` tool invokes `CodeExecutorFunction`. The sandbox blocks common dangerous keywords and enforces a timeout, but it is not a fully hardened isolation boundary. Keep it for controlled analytical snippets, not arbitrary user-submitted code.
+
+Good use cases:
+
+- percentage changes
+- ranking and aggregation
+- parsing small JSON examples
+- statistics from research data
+
+Avoid:
+
+- network access
+- filesystem access
+- package installation
+- long-running computation
+
+### 4.7 Cost Guardrail
+
+`CostGuardrailFunction` checks CloudWatch daily. It only works if `AgentRunCost` metrics exist in the `Meridian/Agent` namespace. The repository currently has a `MetricsPublisher` helper, but the orchestrator does not publish metrics yet.
+
+Until metrics are wired in, use AWS Billing, CloudWatch Logs, and provider dashboards to monitor spend.
+
+## 5. Known Gaps And Follow-Up Work
+
+- Add auth to Function URLs and WebSocket connections before production use.
+- Wire `RateLimiter` into Tavily and any other external APIs.
+- Call `MetricsPublisher.publish_run_metrics()` from the orchestrator with real token, duration, cost, and tool-call data.
+- Replace `summarise_url` simulation with real fetch, parse, S3 archive, and summary logic.
+- Add dedicated API routes if moving away from Lambda Function URLs to the provisioned `HttpApi`.
+- Add backend unit tests for tool execution, HITL resume, timeout behavior, and OpenAI/Bedrock response mapping.
+- Add frontend tests for dashboard, run trace, digest view, and HITL submission.
+
+## 6. Troubleshooting Quick Reference
+
+- Topic submit fails: check `NEXT_PUBLIC_TRIGGER_URL`, trigger Lambda logs, and SQS permissions.
+- Run page disconnects: check `NEXT_PUBLIC_WS_URL`, WebSocket stage URL, and `$connect` logs.
+- No trace events: check `WS_API_ENDPOINT`, `AgentConnections`, and `execute-api:ManageConnections`.
+- No digests appear: check `ResearchDigests`, `NEXT_PUBLIC_GET_DIGESTS_URL`, and get-digests logs.
+- HITL submit fails: check `NEXT_PUBLIC_HITL_RESUME_URL`, paused state status, and `QUEUE_URL`.
+- Memory unavailable: check RDS endpoint, VPC security groups, pgvector, and DB credentials.
+- Search fails: check `TAVILY_API_KEY` and Lambda internet egress through NAT.
+- Model calls fail: check `LLM_PROVIDER`, provider API key, Bedrock access, and CloudWatch logs.

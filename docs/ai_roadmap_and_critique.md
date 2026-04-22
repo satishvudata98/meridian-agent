@@ -1,51 +1,138 @@
-# System Critique & AI Feature Roadmap
+# AI Critique And Roadmap
 
-## 1. The Critic's Verdict: A Ferrari Engine in a Golf Cart
+Last updated: 2026-04-22
 
-You have made an incredibly astute observation. Looking at the current JSON outputs (5 bullet points about Clash of Clans or Elections), there is a massive mismatch between your **Infrastructure** and your **AI Capabilities**.
+This document replaces the older critique that described the project as a basic summarizer on top of strong infrastructure. The current codebase has added several higher-value agent capabilities, but there are still important gaps before the system feels production-grade.
 
-*   **The Infrastructure (9/10)**: You have built an enterprise-grade, production-ready, asynchronous AWS backend. Using SQS for decoupling, DynamoDB for state, EventBridge for cost guardrails, Redis for sliding-window rate limiting, and X-Ray for distributed tracing is **highly sophisticated**.
-*   **The AI Implementation (3/10)**: The AI running on top of this beautiful infrastructure is currently just a basic `while` loop wrapped around a single LLM with a basic web search tool. It does trivial summarization. 
+## 1. Current AI Capability Assessment
 
-**Conclusion**: Right now, the system does *not* need this infrastructure for what it is doing. However, this infrastructure is exactly what is required to support **true** advanced AI agents. You have built the foundation; now you need to build the house.
+The application now demonstrates more than a basic web-search summary loop. The strongest implemented AI features are:
 
-## 2. Portfolio Value for Interviews & Freelancing
+- Plan-first execution through the required `create_research_plan` tool.
+- Phase-aware orchestration across planning, researching, and writing.
+- Critic-gated digest submission, where the first digest attempt is intercepted for review.
+- Structured digest output with executive summary, detailed markdown analysis, citations, and confidence.
+- Vector memory save/search through embeddings and PostgreSQL pgvector.
+- Python code execution for exact calculations and data analysis.
+- Human-in-the-loop pause/resume when the model needs clarification.
+- OpenAI and Bedrock provider abstraction.
 
-**What it shows right now:**
-If you show this to a technical recruiter or freelance client today, they will say: *"This is a fantastic AWS Cloud Architect / Backend Engineer."* They will **not** say: *"This is an advanced AI/Agentic Engineer."* It currently looks like a cloud engineer who just discovered the OpenAI API.
+These additions make the app much more credible as an agentic AI portfolio project. It now shows orchestration control, tool contracts, durable state, resume semantics, and multiple reasoning modes.
 
-**What you need it to show:**
-To win AI engineering roles or high-paying freelance contracts, the system needs to demonstrate that you understand complex AI reasoning, retrieval, and multi-step execution.
+## 2. Remaining Gaps
 
-## 3. High-Value AI Features to Integrate
+### 2.1 Research Depth
 
-To transform this system from a "simple summarizer" into a "highly sophisticated autonomous agent," here are the features you must implement. These will definitively prove your expertise in AI.
+`web_search` is live through Tavily, but `summarise_url` is still a simulation. The agent can find links, but it does not yet fetch, parse, archive, and deeply read source pages. This limits citation quality and makes the digest dependent on search-result snippets unless the model follows up with other available data.
 
-### Phase 1: Advanced Agentic Reasoning
-The current `for step in range(max_steps):` loop is too simple. You need to implement advanced agentic design patterns.
-*   **Plan-and-Solve Architecture**: Instead of just reacting, the agent should first output a `plan` (e.g., "1. Search for X, 2. Scrape Y, 3. Compare Z"). It should then execute the plan step-by-step.
-*   **Self-Reflection & Critique**: Before calling `create_digest`, the agent should use a "Critic" prompt to review its own work. ("Are these 5 bullet points actually insightful? No, they are superficial. I need to dig deeper.")
-*   **Multi-Agent Collaboration (Swarm)**: Instead of one Orchestrator doing everything, split it:
-    *   *Researcher Agent*: Gathers data.
-    *   *Analyst Agent*: Synthesizes and finds contradictions.
-    *   *Writer Agent*: Formats the final digest perfectly.
+### 2.2 Memory Quality
 
-### Phase 2: RAG (Retrieval-Augmented Generation) & True Memory
-The `memory.yaml` stack provisions PostgreSQL, but the AI isn't really using it deeply yet.
-*   **Vector Database Integration**: Actually implement the `pgvector` storage. When the agent searches the web, it should chunk the articles, embed them using Amazon Titan, and save them. 
-*   **Graph RAG**: For complex topics, extract entities and relationships (e.g., Company A acquired Company B) and store them in a Knowledge Graph (like Neo4j or AWS Neptune).
-*   **Document Parsing (Multimodality)**: Add tools that allow the agent to read PDFs, parse Excel sheets, and understand images. 
+Vector memory is implemented, but there is no chunking pipeline, source normalization, duplicate detection, or retrieval-quality evaluation. The database can store memories, but the agent still needs better guidance and tooling around when and how to save durable facts.
 
-### Phase 3: Advanced Tooling & "Action" Capabilities
-Right now, the agent can only *read* the web. Real AI agents can *take action*.
-*   **Code Interpreter Sandbox**: Give the agent a tool to write and execute Python code in a secure container to perform data analysis, math, or generate charts.
-*   **Browser Manipulation (Playwright/Puppeteer)**: Give the agent a headless browser tool so it can bypass simple API searches and actually navigate web apps, click buttons, and scrape authenticated sites.
-*   **API Integrations**: Give it tools to write emails, post to Slack, create Jira tickets, or update Notion databases based on its research.
+### 2.3 Metrics And Cost Control
 
-### Phase 4: Human-in-the-Loop (HITL)
-*   **Pause and Ask**: If the agent is unsure about the user's request (e.g., "Did you mean the 2026 state elections or local elections?"), it should pause the SQS queue, send a message to the user via WebSocket, and wait for human clarification before resuming.
+The cost guardrail Lambda exists, but the orchestrator is not publishing `AgentRunCost` yet. Until token usage, model cost, duration, and tool count are captured per run, the MLOps story is incomplete.
 
-## 4. Summary: The Path Forward
-To make this a portfolio piece that screams **"Expert AI Engineer,"** you don't need to touch the AWS infrastructure—it's already perfect. You need to focus entirely on `backend/lambdas/orchestrator/handler.py` and `backend/shared/tool_executor.py`. 
+### 2.4 Rate Limiting
 
-Implement **Planning, Self-Reflection, Vector RAG, and Code Execution**. Once the output changes from a 5-bullet summary to a 3-page, highly cited, critically analyzed, formatting-rich markdown report generated via multi-step reasoning, your AI system will match the sophistication of your AWS infrastructure.
+The Redis sliding-window rate limiter exists, and ElastiCache is provisioned, but the tool executor does not use it before Tavily or model calls. High-concurrency runs can still hit external API limits.
+
+### 2.5 Safety And Product Hardening
+
+The code executor is isolated as a Lambda with a blocklist, but it is not a robust sandbox for arbitrary untrusted code. The Function URLs and WebSocket API are unauthenticated. Production use needs auth, authorization, input validation, abuse controls, and safer execution isolation.
+
+### 2.6 Multi-Agent Collaboration
+
+The orchestrator simulates separate personas through phases, but there are no separate researcher, analyst, critic, and writer agents with independent prompts, artifacts, or evaluation gates.
+
+## 3. Recommended Next Milestones
+
+### Milestone 1: Make Source Reading Real
+
+Implement `summarise_url` for real source ingestion:
+
+- fetch pages with timeouts and content-type checks
+- extract readable text
+- store raw or cleaned content in S3
+- summarize with citation metadata
+- return title, author/date when available, source URL, and key claims
+- save high-value chunks to vector memory
+
+This is the biggest quality upgrade because it turns the app from search-snippet synthesis into actual source-grounded research.
+
+### Milestone 2: Wire Observability And Cost Metrics
+
+Track run-level metrics:
+
+- token counts
+- estimated provider cost
+- tool-call count
+- run duration
+- model/provider used
+- completion status
+- HITL pause count
+
+Then call `MetricsPublisher.publish_run_metrics()` from the orchestrator and validate the guardrail alarm with synthetic metrics.
+
+### Milestone 3: Connect Rate Limiting
+
+Use the Redis `RateLimiter` before external API calls:
+
+- Tavily search
+- model calls if provider limits need protection
+- code executor invocation if abuse risk increases
+
+Return tool-friendly rate-limit errors so the model can adapt rather than crash the run.
+
+### Milestone 4: Add Evaluation And Tests
+
+Add tests around the behaviors that define the product:
+
+- trigger request validation
+- digest merge and paused-run shaping
+- HITL resume state transitions
+- HITL timeout query/requeue behavior
+- OpenAI tool-call mapping
+- create-digest critic gate
+- code executor blocked-keyword behavior
+- memory save/search with a test database or mocked cursor
+
+Add a small set of golden research topics and score output for citation count, source diversity, contradiction handling, and final structure.
+
+### Milestone 5: Harden Security
+
+Before public deployment:
+
+- add authentication to Function URLs or move to authenticated API Gateway routes
+- add WebSocket auth
+- validate request payload sizes and shapes
+- protect HITL resume from unauthorized run IDs
+- add per-user ownership to runs, digests, and connections
+- replace the blocklist-only sandbox with stronger isolation if code execution remains exposed
+
+### Milestone 6: Improve Agent Architecture
+
+Once source ingestion and observability are solid, split the current phase prompts into clearer roles:
+
+- Planner: builds research strategy and acceptance criteria.
+- Researcher: gathers and stores source-grounded evidence.
+- Analyst: compares evidence, detects contradictions, and uses code for calculations.
+- Critic: scores completeness and asks for more research when weak.
+- Writer: produces the final digest.
+
+This can be implemented inside one Lambda loop first, then separated later if the workload requires it.
+
+## 4. Portfolio Positioning
+
+The project now shows credible full-stack AI systems work:
+
+- serverless event-driven architecture
+- durable async execution
+- live run streaming
+- tool-calling agent loop
+- HITL pause/resume
+- vector memory
+- code execution
+- cloud infrastructure as code
+
+To make it stand out even more, prioritize source-grounded ingestion, metrics, tests, and auth. Those additions will make the demo feel less like a scaffold and more like a dependable research product.

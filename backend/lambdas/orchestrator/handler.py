@@ -42,7 +42,12 @@ def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answ
     else:
         print("WARNING: DB_HOST not set. Proceeding without vector memory.")
 
-    executor = ToolExecutor(llm_client=llm, memory_store=memory_store, run_id=run_id)
+    executor = ToolExecutor(
+        llm_client=llm,
+        memory_store=memory_store,
+        run_id=run_id,
+        topic_name=topic.get('name', 'Unknown')
+    )
     metrics = MetricsPublisher()
     
     # Store annotations for AWS X-Ray Filtering

@@ -9,8 +9,9 @@ from tavily import TavilyClient
 
 
 class ToolExecutor:
-    def __init__(self, llm_client=None, memory_store=None, run_id=None, messages_ref=None):
+    def __init__(self, llm_client=None, memory_store=None, run_id=None, messages_ref=None, topic_name=None):
         self.run_id = run_id
+        self.topic_name = topic_name
         self.messages_ref = messages_ref  # Live reference to the conversation history for HITL state saving
         # Initializing the tool dependencies
         # Note: TAVILY_API_KEY must be accessible in system env params for lambda
@@ -192,6 +193,7 @@ class ToolExecutor:
             table = dynamodb.Table(hitl_table)
             table.put_item(Item={
                 "run_id": self.run_id or "unknown",
+                "topic_name": self.topic_name or "Unknown",
                 "question": question,
                 "context": context,
                 "status": "awaiting_input",

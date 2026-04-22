@@ -7,6 +7,9 @@ def lambda_handler(event, context):
     HTTP endpoint the UI calls when the user submits an answer to the agent's question.
     POST body: { "run_id": "run-abc123", "answer": "Use the Yahoo Finance data" }
     """
+    if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
+        return _response(204, {})
+
     try:
         body = json.loads(event.get('body', '{}'))
         run_id = body.get('run_id')
@@ -64,7 +67,9 @@ def _response(status_code, body):
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Methods": "OPTIONS,POST"
         },
         "body": json.dumps(body)
     }

@@ -60,6 +60,8 @@ Resources:
               Resource: "arn:aws:execute-api:*:*:*/*"
         - DynamoDBCrudPolicy:
             TableName: "ResearchDigests"
+        - DynamoDBCrudPolicy:
+            TableName: "AgentPausedState"
         - DynamoDBReadPolicy:
             TableName: "AgentConnections"
         - Statement:
