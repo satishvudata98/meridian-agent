@@ -35,6 +35,8 @@ Resources:
           DB_USER: agentadmin
           DB_PASSWORD: '{{resolve:ssm:/agent/db_password}}'
           DB_NAME: !ImportValue AgentDBName
+          CODE_EXECUTOR_ARN: !GetAtt CodeExecutorFunction.Arn
+
       # Attach Lambda to private subnets so it can securely reach RDS and route internet traffic via NAT
       VpcConfig:
         SecurityGroupIds:
@@ -59,6 +61,12 @@ Resources:
             TableName: "ResearchDigests"
         - DynamoDBReadPolicy:
             TableName: "AgentConnections"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt CodeExecutorFunction.Arn
+
       Events:
         SQSQueueEvent:
           Type: SQS
@@ -101,6 +109,19 @@ Resources:
         - AWSLambdaBasicExecutionRole
         - DynamoDBReadPolicy:
             TableName: "ResearchDigests"
+
+  CodeExecutorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../../backend/
+      Handler: lambdas.code_executor.handler.lambda_handler
+      Runtime: python3.12
+      Timeout: 30
+      MemorySize: 256
+      # No VPC, No Env Vars, No IAM access beyond logging - Maximum Isolation
+      Policies:
+        - AWSLambdaBasicExecutionRole
+
 
 Outputs:
   AgentRunQueueUrl:

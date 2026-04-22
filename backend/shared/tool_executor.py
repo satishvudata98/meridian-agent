@@ -1,9 +1,12 @@
 import json
 import os
 import uuid
+import sys
 from datetime import datetime
 import boto3
+import subprocess
 from tavily import TavilyClient
+
 
 class ToolExecutor:
     def __init__(self, llm_client=None, memory_store=None, run_id=None):
@@ -37,6 +40,9 @@ class ToolExecutor:
                 return self._search_memory(tool_input)
             elif tool_name == "create_digest":
                 return self._create_digest(tool_input)
+            elif tool_name == "execute_code":
+                return self._execute_code(tool_input)
+
             else:
                 return f"Tool {tool_name} is not recognized."
         except Exception as e:
@@ -109,3 +115,51 @@ class ToolExecutor:
         except Exception as e:
             print(f"Failed to save digest: {e}")
             return f"ERROR: Failed to save digest. Details: {e}"
+
+    def _execute_code(self, args):
+        code = args.get("code")
+        lambda_arn = os.environ.get("CODE_EXECUTOR_ARN")
+        
+        if lambda_arn:
+            # AWS Environment: Invoke the isolated sandbox lambda
+            try:
+                client = boto3.client('lambda')
+                response = client.invoke(
+                    FunctionName=lambda_arn,
+                    Payload=json.dumps({"code": code})
+                )
+                result = json.loads(response['Payload'].read().decode())
+                # Result is inside the 'body' string returned by lambda_handler
+                inner_body = json.loads(result.get("body", "{}"))
+                
+                output = inner_body.get("output", "")
+                error = inner_body.get("error", "")
+                
+                if error:
+                    return f"CODE ERROR/VIOLATION:\n{error}"
+                return f"EXECUTION SUCCESS:\n{output}"
+                
+            except Exception as e:
+                return f"SYSTEM ERROR: Failed to invoke code sandbox: {str(e)}"
+        else:
+            # Local Environment: Fallback to local subprocess execution
+            print("Local environment detected. Running code in local subprocess.")
+            try:
+                # Basic security check even locally
+                if "import os" in code or "subprocess" in code:
+                    return "ERROR: Security violation detected in code."
+                    
+                result = subprocess.run(
+                    [sys.executable, "-c", code],
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                if result.stderr:
+                    return f"CODE ERROR:\n{result.stderr}"
+                return f"EXECUTION SUCCESS:\n{result.stdout}"
+            except subprocess.TimeoutExpired:
+                return "ERROR: Execution timed out."
+            except Exception as e:
+                return f"ERROR: {str(e)}"
+

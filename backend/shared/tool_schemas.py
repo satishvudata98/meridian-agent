@@ -92,5 +92,23 @@ TOOL_SCHEMAS = [
             },
             "required": ["topic_id", "executive_summary", "detailed_analysis", "citations", "confidence_score"]
         }
+    },
+    {
+        "name": "execute_code",
+        "description": "Write and execute Python code to perform precise calculations, compare numerical data, or analyze statistics from your research. Use this when you have numbers that need exact computation. Available libraries: math, statistics, json, datetime, decimal, collections.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Clean, self-contained Python code. Must print() the final result. Max 2000 characters."
+                },
+                "justification": {
+                    "type": "string",
+                    "description": "Explain why code execution is necessary for this specific analysis step."
+                }
+            },
+            "required": ["code", "justification"]
+        }
     }
 ]
