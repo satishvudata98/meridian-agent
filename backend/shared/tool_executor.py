@@ -6,7 +6,8 @@ import boto3
 from tavily import TavilyClient
 
 class ToolExecutor:
-    def __init__(self, llm_client=None, memory_store=None):
+    def __init__(self, llm_client=None, memory_store=None, run_id=None):
+        self.run_id = run_id
         # Initializing the tool dependencies
         # Note: TAVILY_API_KEY must be accessible in system env params for lambda
         try:
@@ -95,6 +96,7 @@ class ToolExecutor:
             table = self.dynamodb.Table(self.digests_table_name)
             table.put_item(Item={
                 'digest_id': digest_id,
+                'run_id': self.run_id or 'unknown',
                 'topic_id': topic_id,
                 'executive_summary': executive_summary,
                 'detailed_analysis': detailed_analysis,

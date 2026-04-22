@@ -29,6 +29,7 @@ Resources:
           TAVILY_API_KEY: "{{resolve:ssm:TAVILY_API_KEY}}" 
           OPENAI_API_KEY: "{{resolve:ssm:OPENAI_API_KEY}}"
           LLM_PROVIDER: "openai"
+          WS_API_ENDPOINT: "{{resolve:ssm:WS_API_ENDPOINT}}"
       Policies:
         - AWSLambdaBasicExecutionRole
         - Statement:
@@ -36,8 +37,15 @@ Resources:
               Action:
                 - bedrock:InvokeModel
               Resource: "*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - execute-api:ManageConnections
+              Resource: "arn:aws:execute-api:*:*:*/*"
         - DynamoDBCrudPolicy:
             TableName: "ResearchDigests"
+        - DynamoDBReadPolicy:
+            TableName: "AgentConnections"
       Events:
         SQSQueueEvent:
           Type: SQS

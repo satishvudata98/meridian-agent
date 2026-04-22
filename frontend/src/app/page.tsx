@@ -140,16 +140,13 @@ export default function Home() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <ul className="space-y-3 mb-6">
-                      {digest.findings && digest.findings.slice(0, 3).map((f: string, j: number) => (
-                        <li key={j} className="text-sm text-neutral-300 flex items-start gap-2">
-                          <span className="text-indigo-500 mt-0.5">•</span> {f.substring(0, 100)}{f.length > 100 ? '...' : ''}
-                        </li>
-                      ))}
-                      {digest.findings && digest.findings.length > 3 && (
-                         <li className="text-xs text-neutral-500 italic">...and {digest.findings.length - 3} more findings</li>
-                      )}
-                    </ul>
+                    <div className="space-y-3 mb-6">
+                      <p className="text-sm text-neutral-300">
+                        {digest.executive_summary 
+                          ? (digest.executive_summary.length > 250 ? digest.executive_summary.substring(0, 250) + '...' : digest.executive_summary) 
+                          : "Processing detailed analysis..."}
+                      </p>
+                    </div>
                     <Link href={`/runs/${digest.run_id || digest.digest_id}`}>
                         <Button variant="outline" className="w-full bg-transparent border-white/10 hover:bg-neutral-800 hover:text-indigo-300 text-neutral-300 transition-all rounded-xl cursor-pointer">
                             View ReAct Traces

@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import boto3
 
 # Allow relative imports from the shared folder when running in Lambda
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
@@ -19,12 +20,45 @@ from shared.metrics_publisher import MetricsPublisher
 @xray_recorder.capture('run_agent_loop')
 def run_agent(topic: dict, run_id: str) -> dict:
     llm = get_llm_client()
-    executor = ToolExecutor(llm_client=llm)
+    executor = ToolExecutor(llm_client=llm, run_id=run_id)
     metrics = MetricsPublisher()
     
     # Store annotations for AWS X-Ray Filtering
     xray_recorder.put_annotation("topic_id", topic.get('name', 'Unknown'))
     xray_recorder.put_annotation("run_id", run_id)
+    
+    ws_endpoint = os.environ.get("WS_API_ENDPOINT")
+    
+    def publish_ws_event(run_id, payload):
+        if not ws_endpoint:
+            return
+        try:
+            dynamodb = boto3.resource('dynamodb')
+            table = dynamodb.Table('AgentConnections')
+            
+            # Query the GSI to find all connections for this run_id
+            response = table.query(
+                IndexName='RunConnectionsIdx',
+                KeyConditionExpression=boto3.dynamodb.conditions.Key('run_id').eq(run_id)
+            )
+            
+            connections = response.get('Items', [])
+            if not connections:
+                return
+                
+            apigw = boto3.client('apigatewaymanagementapi', endpoint_url=ws_endpoint)
+            for conn in connections:
+                try:
+                    apigw.post_to_connection(
+                        ConnectionId=conn['connection_id'],
+                        Data=json.dumps(payload).encode('utf-8')
+                    )
+                except apigw.exceptions.GoneException:
+                    pass # Connection is dead, ignore
+                except Exception as e:
+                    print(f"Failed to post to connection {conn['connection_id']}: {e}")
+        except Exception as e:
+            print(f"WebSocket broadcast failed: {e}")
     
     max_steps = 15
     current_phase = "planning"
@@ -51,7 +85,7 @@ def run_agent(topic: dict, run_id: str) -> dict:
         print(f"\n--- Step {step + 1} | Phase: {current_phase} ---")
         
         # In a real app, publish a WebSocket event so the Frontend can show a live terminal UI
-        # publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "thinking"})
+        publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "thinking", "message": f"Thinking in phase: {current_phase}..."})
 
         system_prompt = get_system_prompt(current_phase)
         response = llm.fast_call(messages, system=system_prompt, tools=TOOL_SCHEMAS)
@@ -80,6 +114,8 @@ def run_agent(topic: dict, run_id: str) -> dict:
                     if tool_name == "create_research_plan" and current_phase == "planning":
                         current_phase = "researching"
                         
+                    publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "tool_use", "tool": tool_name, "message": f"Using tool {tool_name}..."})
+                        
                     if tool_name == "create_digest":
                         if current_phase != "writing":
                             # Intercept the first digest attempt and enforce a Critic review
@@ -106,6 +142,7 @@ def run_agent(topic: dict, run_id: str) -> dict:
             # If the specific create_digest tool was successfully executed, we can break gracefully
             if any(block.get("name") == "create_digest" for block in response_content if block.get("type") == "tool_use") and current_phase == "writing" and "SUCCESS" in str(tool_results[-1].get("content", "")):
                  print("Final Digest creation triggered. Loop complete.")
+                 publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "completed", "message": "Digest created successfully."})
                  break
 
     return {"run_id": run_id, "steps_taken": step + 1, "status": "completed"}

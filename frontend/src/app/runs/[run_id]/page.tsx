@@ -12,14 +12,8 @@ export default function RunViewer() {
   const runId = params.run_id as string;
   const { logs, isConnected } = useAgentRunStream(runId);
   
-  // Mocking initial logic tracing to display the UI immediately for demo purposes
-  const displayLogs = logs.length > 0 ? logs : [
-    { step: 1, status: "thinking", message: "Analyzing User Query and configuring memory vectors..." },
-    { step: 1, status: "tool_use", tool: "web_search", message: "Calling Tavily API to fetch top queries." },
-    { step: 2, status: "thinking", message: "Synthesizing 4 search results..." },
-    { step: 2, status: "tool_use", tool: "save_to_memory", message: "Persisting insight to pgvector block 0x3f9A" },
-    { step: 3, status: "thinking", message: "Threshold reached. Dispatching final digest..." },
-  ];
+  const isCompleted = logs.some(log => log.status === "completed");
+  const displayLogs = logs;
 
   return (
     <main className="min-h-screen bg-neutral-950 p-8">
@@ -56,19 +50,36 @@ export default function RunViewer() {
                 key={i} 
                 initial={{ opacity: 0, x: -10 }} 
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.15 }}
+                transition={{ delay: 0.1 }}
                 className="flex items-start gap-4 p-2 hover:bg-white/5 rounded-md transition-colors"
                >
                  <span className="text-neutral-500 shrink-0 select-none">[{log.step}]</span>
-                 <span className={`shrink-0 ${log.status === "tool_use" ? "text-indigo-400 font-semibold" : "text-neutral-200"}`}>
-                   {log.status === "tool_use" ? `[λ ${log.tool}]` : "[agent]"}
+                 <span className={`shrink-0 ${log.status === "tool_use" ? "text-indigo-400 font-semibold" : (log.status === "completed" ? "text-emerald-400 font-bold" : "text-neutral-200")}`}>
+                   {log.status === "tool_use" ? `[λ ${log.tool}]` : (log.status === "completed" ? "[done]" : "[agent]")}
                  </span>
-                 <span className={log.status === "tool_use" ? "text-indigo-200" : "text-emerald-300"}>{log.message}</span>
+                 <span className={log.status === "tool_use" ? "text-indigo-200" : (log.status === "completed" ? "text-emerald-300 font-medium" : "text-emerald-300")}>{log.message || log.status}</span>
               </motion.div>
             ))}
-            <div className="text-neutral-500 animate-pulse flex items-center gap-2 mt-4 ml-2">
-                <Loader2Icon className="animate-spin w-4 h-4"/> Awaiting lambda pulse...
-            </div>
+            {!isCompleted && (
+              <div className="text-neutral-500 animate-pulse flex items-center gap-2 mt-4 ml-2">
+                  <Loader2Icon className="animate-spin w-4 h-4"/> Awaiting lambda pulse...
+              </div>
+            )}
+            {isCompleted && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                className="mt-8 p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex flex-col items-center gap-4 text-center"
+              >
+                <h3 className="text-xl font-bold text-emerald-400">Run Completed Successfully! 🎉</h3>
+                <p className="text-emerald-200/70 text-sm">The agent has finished compiling the research digest.</p>
+                <Link href="/">
+                  <Button className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] px-8 rounded-full mt-2">
+                    Read Generated Digest
+                  </Button>
+                </Link>
+              </motion.div>
+            )}
           </div>
         </div>
       </div>
