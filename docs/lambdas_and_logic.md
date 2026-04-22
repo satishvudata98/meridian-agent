@@ -41,9 +41,10 @@ Flow:
 2. Scans `ResearchDigests`.
 3. Scans `AgentPausedState`.
 4. Converts paused items with `status == "awaiting_input"` into dashboard-compatible cards.
-5. Merges completed digests and paused cards.
-6. Sorts by `created_at` descending.
-7. Returns the top 20 items.
+5. Includes paused-run question, context, and expiry data so `/runs/[run_id]` can render guidance even when the original browser tab was closed.
+6. Merges completed digests and paused cards.
+7. Sorts by `created_at` descending.
+8. Returns the top 20 items.
 
 The function includes a `DecimalEncoder` so DynamoDB `Decimal` values serialize correctly.
 

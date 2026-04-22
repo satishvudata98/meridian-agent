@@ -36,6 +36,8 @@ Set these variables for the Next.js app:
 - `NEXT_PUBLIC_WS_URL`: `WebSocketApiUrl` stack output.
 - `NEXT_PUBLIC_HITL_RESUME_URL`: `HITLResumeUrl` stack output.
 
+Because these are `NEXT_PUBLIC_*` variables, rebuild and redeploy the frontend after changing them.
+
 ## 2. Deployment Checklist
 
 1. Configure AWS credentials.
@@ -153,6 +155,7 @@ Until metrics are wired in, use AWS Billing, CloudWatch Logs, and provider dashb
 - No trace events: check `WS_API_ENDPOINT`, `AgentConnections`, and `execute-api:ManageConnections`.
 - No digests appear: check `ResearchDigests`, `NEXT_PUBLIC_GET_DIGESTS_URL`, and get-digests logs.
 - HITL submit fails: check `NEXT_PUBLIC_HITL_RESUME_URL`, paused state status, and `QUEUE_URL`.
+- Guidance page spins after clicking a paused card: confirm the frontend was rebuilt with `NEXT_PUBLIC_GET_DIGESTS_URL` and `NEXT_PUBLIC_HITL_RESUME_URL`.
 - Memory unavailable: check RDS endpoint, VPC security groups, pgvector, and DB credentials.
 - Search fails: check `TAVILY_API_KEY` and Lambda internet egress through NAT.
 - Model calls fail: check `LLM_PROVIDER`, provider API key, Bedrock access, and CloudWatch logs.

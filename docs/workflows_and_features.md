@@ -39,7 +39,7 @@ The first `create_digest` attempt during the research phase is intercepted. The 
 
 ### 1.7 Human-In-The-Loop Guidance
 
-If the agent needs a human decision, `ask_human_guidance` saves the run state to `AgentPausedState`, including the current phase and pending tool-call ID, broadcasts an awaiting-input event, and exits the Lambda cleanly. The run page lets the user submit an answer. `HITLResumeFunction` loads the saved state and requeues the run as `hitl_resume`.
+If the agent needs a human decision, `ask_human_guidance` saves the run state to `AgentPausedState`, including the current phase and pending tool-call ID, broadcasts an awaiting-input event, and exits the Lambda cleanly. The run page can show the pause from either a live WebSocket event or persisted paused state returned by the digests API. The user submits an answer through `HITLResumeFunction`, which loads the saved state and requeues the run as `hitl_resume`.
 
 ### 1.8 HITL Timeout Auto-Resume
 
@@ -83,7 +83,7 @@ Important: the metric publishing helper exists, but the orchestrator does not cu
 1. The model calls `ask_human_guidance` with a question and context.
 2. The tool stores `run_id`, `topic_name`, `phase`, `pending_tool_use_id`, question, context, status, expiry times, TTL, and serialized messages in `AgentPausedState`.
 3. A WebSocket `awaiting_human_input` event is emitted.
-4. The frontend displays the HITL answer card on `/runs/[run_id]`.
+4. The frontend displays the HITL answer card on `/runs/[run_id]`. If the user returns later, the page fetches persisted paused state through `NEXT_PUBLIC_GET_DIGESTS_URL`.
 5. The dashboard also includes the paused run in latest insights.
 6. The user posts an answer through `NEXT_PUBLIC_HITL_RESUME_URL`.
 7. `HITLResumeFunction` marks the paused run as resumed and queues a `hitl_resume` message with the saved phase and pending tool-call ID.
@@ -118,6 +118,8 @@ The dashboard expects these public environment variables:
 - `NEXT_PUBLIC_GET_DIGESTS_URL`: get-digests Lambda Function URL.
 - `NEXT_PUBLIC_WS_URL`: WebSocket API Gateway URL ending in `/prod`.
 - `NEXT_PUBLIC_HITL_RESUME_URL`: HITL resume Lambda Function URL.
+
+For deployed frontend hosts such as Vercel, `NEXT_PUBLIC_*` values are baked into the client bundle at build time. If `NEXT_PUBLIC_HITL_RESUME_URL` is added or changed, redeploy the frontend before testing guidance submission.
 
 ## 7. Feature Status Notes
 

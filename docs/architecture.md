@@ -32,7 +32,7 @@ The backend intentionally separates fast user-facing HTTP requests from slower a
 
 1. During research, the agent may call `ask_human_guidance` when it encounters genuine ambiguity.
 2. `ToolExecutor._ask_human_guidance()` writes a snapshot of the conversation to `AgentPausedState`, stores the current phase and pending tool-call ID, sets a 2-hour response deadline, and broadcasts a pause event over WebSocket.
-3. The run page shows a guidance input. The dashboard also surfaces paused runs as "Awaiting Guidance" cards.
+3. The run page shows a guidance input from either the live WebSocket pause event or persisted paused state loaded from the digests API. The dashboard also surfaces paused runs as "Awaiting Guidance" cards.
 4. The user submits an answer to `NEXT_PUBLIC_HITL_RESUME_URL`.
 5. `HITLResumeFunction` marks the paused state as resumed and sends a `hitl_resume` message back to `AgentRunQueue`.
 6. The orchestrator restores the saved messages, converts the human answer or timeout instruction into the matching `tool_result`, restores the saved phase, and continues the agent loop.

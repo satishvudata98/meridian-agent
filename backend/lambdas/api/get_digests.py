@@ -41,6 +41,9 @@ def lambda_handler(event, context):
                 "run_id": item['run_id'],
                 "topic_id": item.get('topic_name', 'Paused Run'),
                 "executive_summary": f"AGENT PAUSED: {item.get('question', 'Needs guidance')}",
+                "question": item.get('question', 'Needs guidance'),
+                "context": item.get('context', ''),
+                "expires_at": item.get('expires_at'),
                 "status": "awaiting_input",
                 "created_at": item.get('created_at', '')
             }

@@ -11,11 +11,21 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 
+type DigestCard = {
+  digest_id?: string;
+  run_id?: string;
+  topic_id?: string;
+  executive_summary?: string;
+  created_at?: string;
+  confidence?: number;
+  status?: string;
+};
+
 export default function Home() {
   const router = useRouter();
   const [topicInput, setTopicInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [digests, setDigests] = useState<any[]>([]);
+  const [digests, setDigests] = useState<DigestCard[]>([]);
   const [isLoadingDigests, setIsLoadingDigests] = useState(true);
 
   useEffect(() => {
@@ -31,7 +41,7 @@ export default function Home() {
         const response = await fetch(url);
         if (response.ok) {
           const data = await response.json();
-          setDigests(data || []);
+          setDigests(Array.isArray(data) ? data : []);
         }
       } catch (err) {
         console.error("Failed to fetch digests", err);
@@ -121,8 +131,8 @@ export default function Home() {
               <div className="col-span-full text-center text-neutral-500 py-12 bg-neutral-900/30 rounded-2xl border border-white/5">
                 No research digests found. Start tracking a topic above!
               </div>
-            ) : digests.filter((d: any) => d.executive_summary).map((digest, i) => {
-              const isPaused = (digest as any).status === "awaiting_input";
+            ) : digests.filter((d) => d.executive_summary).map((digest, i) => {
+              const isPaused = digest.status === "awaiting_input";
               
               return (
                 <motion.div 
@@ -149,7 +159,7 @@ export default function Home() {
                         </Badge>
                       </div>
                       <CardDescription className="text-neutral-500">
-                        {new Date(digest.created_at).toLocaleDateString()}
+                        {digest.created_at ? new Date(digest.created_at).toLocaleDateString() : "Pending"}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>

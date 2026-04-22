@@ -7,11 +7,21 @@ import { ArrowLeftIcon, FileTextIcon, Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
+type Digest = {
+  digest_id?: string;
+  topic_id?: string;
+  executive_summary?: string;
+  detailed_analysis?: string;
+  citations?: string[];
+  created_at?: string;
+  confidence?: number;
+};
+
 export default function DigestView() {
   const params = useParams();
   const router = useRouter();
   const digestId = params.digest_id as string;
-  const [digest, setDigest] = useState<any>(null);
+  const [digest, setDigest] = useState<Digest | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -24,7 +34,9 @@ export default function DigestView() {
         if (response.ok) {
           const data = await response.json();
           // Find the specific digest from the bulk response
-          const found = data.find((d: any) => d.digest_id === digestId);
+          const found = Array.isArray(data)
+            ? data.find((d: Digest) => d.digest_id === digestId)
+            : null;
           setDigest(found);
         }
       } catch (err) {
@@ -70,19 +82,19 @@ export default function DigestView() {
           </div>
           <div className="flex items-center gap-3">
              <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{digest.confidence || 90}% Confidence</Badge>
-             <span className="text-sm text-neutral-500">{new Date(digest.created_at).toLocaleString()}</span>
+             <span className="text-sm text-neutral-500">{digest.created_at ? new Date(digest.created_at).toLocaleString() : "Pending"}</span>
           </div>
         </header>
 
         <section className="prose prose-invert prose-indigo max-w-none">
           <h2 className="text-2xl text-indigo-300 border-b border-white/5 pb-2">Executive Summary</h2>
           <p className="text-lg text-neutral-300 leading-relaxed mb-8">
-            {digest.executive_summary}
+            {digest.executive_summary || "No executive summary available."}
           </p>
 
           <h2 className="text-2xl text-indigo-300 border-b border-white/5 pb-2">Detailed Analysis</h2>
           <div className="text-neutral-300 leading-relaxed space-y-4">
-            <ReactMarkdown>{digest.detailed_analysis}</ReactMarkdown>
+            <ReactMarkdown>{digest.detailed_analysis || ""}</ReactMarkdown>
           </div>
 
           {digest.citations && digest.citations.length > 0 && (

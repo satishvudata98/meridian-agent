@@ -3,12 +3,21 @@
 import { useParams } from "next/navigation";
 import { useAgentRunStream } from "@/lib/useAgentRunStream";
 import { motion } from "framer-motion";
-import { TerminalIcon, CpuIcon, Loader2Icon, ArrowLeftIcon, MessageSquareIcon, SendIcon } from "lucide-react";
+import { CpuIcon, Loader2Icon, ArrowLeftIcon, MessageSquareIcon, SendIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const HITL_RESUME_URL = process.env.NEXT_PUBLIC_HITL_RESUME_URL || "";
+const GET_DIGESTS_URL = process.env.NEXT_PUBLIC_GET_DIGESTS_URL || "";
+
+type PausedRun = {
+  run_id: string;
+  question?: string;
+  context?: string;
+  executive_summary?: string;
+  status?: string;
+};
 
 export default function RunViewer() {
   const params = useParams();
@@ -18,24 +27,57 @@ export default function RunViewer() {
   const [hitlAnswer, setHitlAnswer] = useState("");
   const [hitlSubmitting, setHitlSubmitting] = useState(false);
   const [hitlSubmitted, setHitlSubmitted] = useState(false);
+  const [pausedRun, setPausedRun] = useState<PausedRun | null>(null);
+  const [hitlError, setHitlError] = useState("");
+
+  useEffect(() => {
+    const fetchPausedRun = async () => {
+      if (!GET_DIGESTS_URL) return;
+      try {
+        const response = await fetch(GET_DIGESTS_URL);
+        if (!response.ok) return;
+        const data = await response.json();
+        const found = (data || []).find((item: PausedRun) => (
+          item.run_id === runId && item.status === "awaiting_input"
+        ));
+        setPausedRun(found || null);
+      } catch (error) {
+        console.error("Failed to fetch paused run state:", error);
+      }
+    };
+
+    fetchPausedRun();
+  }, [runId]);
 
   const isCompleted = logs.some(log => log.status === "completed");
   // Check if the latest status event is an HITL pause
   const hitlLog = logs.find(log => log.status === "awaiting_human_input");
-  const isAwaitingHumanInput = !!hitlLog && !hitlSubmitted;
+  const isAwaitingHumanInput = (!!hitlLog || !!pausedRun) && !hitlSubmitted;
+  const hitlQuestion = hitlLog?.message || pausedRun?.question || pausedRun?.executive_summary || "The agent encountered ambiguity and needs your direction.";
 
   const handleSubmitAnswer = async () => {
-    if (!hitlAnswer.trim() || !HITL_RESUME_URL) return;
+    setHitlError("");
+    if (!hitlAnswer.trim()) return;
+    if (!HITL_RESUME_URL) {
+      setHitlError("Missing NEXT_PUBLIC_HITL_RESUME_URL in the deployed frontend environment.");
+      return;
+    }
     setHitlSubmitting(true);
     try {
-      await fetch(HITL_RESUME_URL, {
+      const response = await fetch(HITL_RESUME_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ run_id: runId, answer: hitlAnswer.trim() }),
       });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Resume failed with status ${response.status}`);
+      }
       setHitlSubmitted(true);
+      setPausedRun(null);
     } catch (e) {
       console.error("Failed to submit HITL answer:", e);
+      setHitlError(e instanceof Error ? e.message : "Failed to submit HITL answer.");
     } finally {
       setHitlSubmitting(false);
     }
@@ -80,8 +122,13 @@ export default function RunViewer() {
               </div>
             </div>
             <p className="text-amber-100/80 text-sm leading-relaxed bg-amber-500/5 rounded-xl p-4 border border-amber-500/10">
-              {hitlLog?.message || "The agent encountered ambiguity and needs your direction."}
+              {hitlQuestion}
             </p>
+            {pausedRun?.context && (
+              <p className="text-amber-100/60 text-xs leading-relaxed">
+                {pausedRun.context}
+              </p>
+            )}
             <div className="flex gap-3">
               <input
                 id="hitl-answer-input"
@@ -102,6 +149,9 @@ export default function RunViewer() {
                 {hitlSubmitting ? "Sending..." : "Send"}
               </Button>
             </div>
+            {hitlError && (
+              <p className="text-rose-300 text-sm">{hitlError}</p>
+            )}
           </motion.div>
         )}
 
