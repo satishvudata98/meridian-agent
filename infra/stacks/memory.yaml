@@ -33,9 +33,14 @@ Resources:
 
   # 4. PostgreSQL Database for Semantic Memory storage (pgvector)
   # Placed in private subnets, protected by DatabaseSecurityGroup (port 5432 only from Lambda SG)
+  # NOTE: If updating an existing RDS instance, delete it from the console first.
+  #       AWS does not allow adding a DBSubnetGroupName to a live instance in-place.
   AgentMemoryDB:
     Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot   # On stack delete, take a final snapshot to preserve data
+    UpdateReplacePolicy: Snapshot
     Properties:
+      DBInstanceIdentifier: agent-memory-db
       AllocatedStorage: 20
       DBInstanceClass: db.t3.micro
       Engine: postgres
@@ -47,8 +52,6 @@ Resources:
       DBSubnetGroupName: !Ref AgentDBSubnetGroup
       VPCSecurityGroups:
         - !ImportValue AgentDatabaseSecurityGroupId
-      # Ensure a clean deletion without snapshot requirements for dev
-      DeletionPolicy: Snapshot
 
 Outputs:
   RawDocumentBucketName:
