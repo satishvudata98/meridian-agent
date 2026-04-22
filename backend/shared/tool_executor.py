@@ -24,7 +24,9 @@ class ToolExecutor:
     def execute(self, tool_name, tool_input):
         print(f"Executing tool: {tool_name} with input: {tool_input}")
         try:
-            if tool_name == "web_search":
+            if tool_name == "create_research_plan":
+                return self._create_research_plan(tool_input)
+            elif tool_name == "web_search":
                 return self._web_search(tool_input)
             elif tool_name == "summarise_url":
                 return self._summarise_url(tool_input)
@@ -38,6 +40,12 @@ class ToolExecutor:
                 return f"Tool {tool_name} is not recognized."
         except Exception as e:
             return f"Error executing {tool_name}: {str(e)}"
+
+    def _create_research_plan(self, args):
+        topic_id = args.get("topic_id")
+        plan_steps = args.get("plan_steps", [])
+        print(f"Research plan created for {topic_id}: {plan_steps}")
+        return f"SUCCESS: Research plan acknowledged. Now proceed with step 1: {plan_steps[0] if plan_steps else 'No steps provided.'}"
 
     def _web_search(self, args):
         query = args.get("query")
@@ -76,7 +84,9 @@ class ToolExecutor:
 
     def _create_digest(self, args):
         topic_id = args.get('topic_id', 'unknown')
-        findings = args.get('findings', [])
+        executive_summary = args.get('executive_summary', 'No summary provided.')
+        detailed_analysis = args.get('detailed_analysis', 'No analysis provided.')
+        citations = args.get('citations', [])
         
         digest_id = f"digest-{uuid.uuid4().hex[:8]}"
         created_at = datetime.utcnow().isoformat()
@@ -86,11 +96,13 @@ class ToolExecutor:
             table.put_item(Item={
                 'digest_id': digest_id,
                 'topic_id': topic_id,
-                'findings': findings,
+                'executive_summary': executive_summary,
+                'detailed_analysis': detailed_analysis,
+                'citations': citations,
                 'created_at': created_at,
                 'confidence': 95 # Hardcoded for now, could be determined by LLM
             })
-            return f"SUCCESS: Digest {digest_id} created for topic {topic_id} with {len(findings)} findings."
+            return f"SUCCESS: Digest {digest_id} created for topic {topic_id}."
         except Exception as e:
             print(f"Failed to save digest: {e}")
             return f"ERROR: Failed to save digest. Details: {e}"

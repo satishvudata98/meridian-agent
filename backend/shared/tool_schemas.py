@@ -1,5 +1,21 @@
 TOOL_SCHEMAS = [
     {
+        "name": "create_research_plan",
+        "description": "Call this tool FIRST before taking any other action. Outline your step-by-step plan to research the topic thoroughly.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic_id": {"type": "string", "description": "The topic ID being researched"},
+                "plan_steps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "A detailed, numbered list of steps you plan to take to research this topic."
+                }
+            },
+            "required": ["topic_id", "plan_steps"]
+        }
+    },
+    {
         "name": "web_search",
         "description": "Searches the web using Tavily API for specific queries when recent or external information is needed.",
         "input_schema": {
@@ -51,18 +67,26 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "create_digest",
-        "description": "Call this tool to finish the loop and compile the final digest once enough high-quality sources are found. Calling this means the agent process is complete.",
+        "description": "Call this tool to finish the loop and compile the final digest once enough high-quality sources are found. Calling this means the agent process is complete. The output must be highly detailed and formatted as markdown.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "topic_id": {"type": "string"},
-                "findings": {
+                "executive_summary": {
+                    "type": "string",
+                    "description": "A high-level markdown summary of the findings."
+                },
+                "detailed_analysis": {
+                    "type": "string",
+                    "description": "A comprehensive markdown report with sections, deep analysis, and synthesis of contradictions."
+                },
+                "citations": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "A list of strings representing the key bullet points found."
+                    "description": "A list of URLs or sources used to compile this digest."
                 }
             },
-            "required": ["topic_id", "findings"]
+            "required": ["topic_id", "executive_summary", "detailed_analysis", "citations"]
         }
     }
 ]
