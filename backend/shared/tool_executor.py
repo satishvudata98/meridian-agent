@@ -132,12 +132,15 @@ class ToolExecutor:
                 # Result is inside the 'body' string returned by lambda_handler
                 inner_body = json.loads(result.get("body", "{}"))
                 
-                output = inner_body.get("output", "")
+                output = inner_body.get("output", "").strip()
                 error = inner_body.get("error", "")
                 
                 if error:
                     return f"CODE ERROR/VIOLATION:\n{error}"
+                if not output:
+                    return "ERROR: Code executed successfully but produced NO output. Did you forget to use print() to display your results?"
                 return f"EXECUTION SUCCESS:\n{output}"
+
                 
             except Exception as e:
                 return f"SYSTEM ERROR: Failed to invoke code sandbox: {str(e)}"
@@ -157,7 +160,11 @@ class ToolExecutor:
                 )
                 if result.stderr:
                     return f"CODE ERROR:\n{result.stderr}"
-                return f"EXECUTION SUCCESS:\n{result.stdout}"
+                output = result.stdout.strip()
+                if not output:
+                    return "ERROR: Code executed successfully but produced NO output. Did you forget to use print() to display your results?"
+                return f"EXECUTION SUCCESS:\n{output}"
+
             except subprocess.TimeoutExpired:
                 return "ERROR: Execution timed out."
             except Exception as e:

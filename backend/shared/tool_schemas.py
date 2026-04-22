@@ -101,7 +101,7 @@ TOOL_SCHEMAS = [
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "Clean, self-contained Python code. Must print() the final result. Max 2000 characters."
+                    "description": "Clean, self-contained Python code. CRITICAL: You MUST use print() to output your results. The sandbox only returns what is printed to stdout. If you don't print, you will see an empty result."
                 },
                 "justification": {
                     "type": "string",
