@@ -21,8 +21,18 @@ Resources:
       Engine: redis
       ServerlessCacheName: ai-agent-rate-limit
 
-  # 3. PostgreSQL Database for Semantic Memory storage (pgvector)
-  # NOTE: In a mature multi-stack deploy, Security Groups and Subnets would be configured here.
+  # 3. DB Subnet Group — tells RDS which private subnets it can run in
+  # Imports from the NetworkStack which must be deployed first
+  AgentDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Private subnets for the AI Agent RDS database"
+      SubnetIds:
+        - !ImportValue AgentPrivateSubnet1Id
+        - !ImportValue AgentPrivateSubnet2Id
+
+  # 4. PostgreSQL Database for Semantic Memory storage (pgvector)
+  # Placed in private subnets, protected by DatabaseSecurityGroup (port 5432 only from Lambda SG)
   AgentMemoryDB:
     Type: AWS::RDS::DBInstance
     Properties:
@@ -32,9 +42,25 @@ Resources:
       EngineVersion: '16.3'
       MasterUsername: agentadmin
       # Security best practice: pulling password from Parameter Store at deploy time
-      MasterUserPassword: '{{resolve:ssm:/agent/db_password}}' 
+      MasterUserPassword: '{{resolve:ssm:/agent/db_password}}'
       PubliclyAccessible: false
+      DBSubnetGroupName: !Ref AgentDBSubnetGroup
+      VPCSecurityGroups:
+        - !ImportValue AgentDatabaseSecurityGroupId
+      # Ensure a clean deletion without snapshot requirements for dev
+      DeletionPolicy: Snapshot
 
 Outputs:
   RawDocumentBucketName:
     Value: !Ref RawDocumentBucket
+
+  # Export the RDS endpoint so AgentStack can inject it into the Lambda env vars
+  DBEndpointAddress:
+    Value: !GetAtt AgentMemoryDB.Endpoint.Address
+    Export:
+      Name: AgentDBEndpointAddress
+
+  DBName:
+    Value: postgres
+    Export:
+      Name: AgentDBName

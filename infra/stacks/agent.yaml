@@ -26,12 +26,25 @@ Resources:
       Environment:
         Variables:
           # Will pull from SSM or environment overrides automatically in AWS
-          TAVILY_API_KEY: "{{resolve:ssm:TAVILY_API_KEY}}" 
+          TAVILY_API_KEY: "{{resolve:ssm:TAVILY_API_KEY}}"
           OPENAI_API_KEY: "{{resolve:ssm:OPENAI_API_KEY}}"
           LLM_PROVIDER: "openai"
           WS_API_ENDPOINT: "{{resolve:ssm:WS_API_ENDPOINT}}"
+          # Database connection — sourced from the MemoryStack output
+          DB_HOST: !ImportValue AgentDBEndpointAddress
+          DB_USER: agentadmin
+          DB_PASSWORD: '{{resolve:ssm:/agent/db_password}}'
+          DB_NAME: !ImportValue AgentDBName
+      # Attach Lambda to private subnets so it can securely reach RDS and route internet traffic via NAT
+      VpcConfig:
+        SecurityGroupIds:
+          - !ImportValue AgentLambdaSecurityGroupId
+        SubnetIds:
+          - !ImportValue AgentPrivateSubnet1Id
+          - !ImportValue AgentPrivateSubnet2Id
       Policies:
         - AWSLambdaBasicExecutionRole
+        - AWSLambdaVPCAccessExecutionRole  # Required to create/delete VPC network interfaces (ENIs)
         - Statement:
             - Effect: Allow
               Action:

@@ -16,11 +16,33 @@ from shared.llm_factory import get_llm_client
 from shared.tool_schemas import TOOL_SCHEMAS
 from shared.tool_executor import ToolExecutor
 from shared.metrics_publisher import MetricsPublisher
+from shared.memory_store import MemoryStore
 
 @xray_recorder.capture('run_agent_loop')
 def run_agent(topic: dict, run_id: str) -> dict:
     llm = get_llm_client()
-    executor = ToolExecutor(llm_client=llm, run_id=run_id)
+    
+    # Initialize long-term vector memory. Gracefully skip if DB is unreachable.
+    memory_store = None
+    db_host = os.environ.get("DB_HOST")
+    if db_host:
+        try:
+            memory_store = MemoryStore(
+                host=db_host,
+                user=os.environ.get("DB_USER", "agentadmin"),
+                password=os.environ.get("DB_PASSWORD", ""),
+                dbname=os.environ.get("DB_NAME", "postgres")
+            )
+            # Auto-provision schema on every cold start. All SQL uses IF NOT EXISTS,
+            # so this is a safe no-op after the first successful run.
+            memory_store.initialize_schema()
+            print(f"Vector memory store connected and schema verified at {db_host}.")
+        except Exception as e:
+            print(f"WARNING: Could not connect to MemoryStore: {e}. Proceeding without memory.")
+    else:
+        print("WARNING: DB_HOST not set. Proceeding without vector memory.")
+
+    executor = ToolExecutor(llm_client=llm, memory_store=memory_store, run_id=run_id)
     metrics = MetricsPublisher()
     
     # Store annotations for AWS X-Ray Filtering

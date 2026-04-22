@@ -3,28 +3,42 @@ Transform: AWS::Serverless-2016-10-31
 Description: Autonomous AI Research Agent Root Template
 
 Resources:
+  # 1. Networking is the foundation — deploy first
+  NetworkStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: stacks/network.yaml
+
+  # 2. DynamoDB tables needed by API and Agent
   DataStack:
     Type: AWS::Serverless::Application
     Properties:
       Location: stacks/data.yaml
 
+  # 3. Memory (RDS, Redis, S3) — depends on network for VPC + SG imports
+  MemoryStack:
+    Type: AWS::Serverless::Application
+    DependsOn: NetworkStack
+    Properties:
+      Location: stacks/memory.yaml
+
+  # 4. API Gateway (WebSocket & HTTP) — standalone
   ApiStack:
     Type: AWS::Serverless::Application
     Properties:
       Location: stacks/api.yaml
 
+  # 5. Agent compute — depends on networking (for VPC) and memory (for DB endpoint)
   AgentStack:
     Type: AWS::Serverless::Application
+    DependsOn:
+      - NetworkStack
+      - MemoryStack
     Properties:
       Location: stacks/agent.yaml
 
-  MemoryStack:
-    Type: AWS::Serverless::Application
-    Properties:
-      Location: stacks/memory.yaml
-
+  # 6. Observability — standalone cost guardrail
   ObservabilityStack:
     Type: AWS::Serverless::Application
     Properties:
       Location: stacks/observability.yaml
-
