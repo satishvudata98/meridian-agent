@@ -46,7 +46,8 @@ def run_agent(topic: dict, run_id: str) -> dict:
             if not connections:
                 return
                 
-            apigw = boto3.client('apigatewaymanagementapi', endpoint_url=ws_endpoint)
+            http_endpoint = ws_endpoint.replace('wss://', 'https://')
+            apigw = boto3.client('apigatewaymanagementapi', endpoint_url=http_endpoint)
             for conn in connections:
                 try:
                     apigw.post_to_connection(

@@ -121,7 +121,7 @@ export default function Home() {
               <div className="col-span-full text-center text-neutral-500 py-12 bg-neutral-900/30 rounded-2xl border border-white/5">
                 No research digests found. Start tracking a topic above!
               </div>
-            ) : digests.map((digest, i) => (
+            ) : digests.filter((d: any) => d.executive_summary).map((digest, i) => (
               <motion.div 
                 key={digest.digest_id || i} 
                 initial={{ opacity: 0, y: 20 }} 
@@ -147,12 +147,21 @@ export default function Home() {
                           : "Processing detailed analysis..."}
                       </p>
                     </div>
-                    <Link href={`/runs/${digest.run_id || digest.digest_id}`}>
-                        <Button variant="outline" className="w-full bg-transparent border-white/10 hover:bg-neutral-800 hover:text-indigo-300 text-neutral-300 transition-all rounded-xl cursor-pointer">
-                            View ReAct Traces
-                            <ExternalLink className="w-4 h-4 ml-2 opacity-50" />
-                        </Button>
-                    </Link>
+                    <div className="flex gap-2">
+                      <Link href={`/digests/${digest.digest_id}`} className="flex-1">
+                          <Button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white transition-all rounded-xl cursor-pointer">
+                              Read Full Report
+                              <ExternalLink className="w-4 h-4 ml-2 opacity-80" />
+                          </Button>
+                      </Link>
+                      {digest.run_id && (
+                        <Link href={`/runs/${digest.run_id}`}>
+                            <Button variant="outline" className="bg-transparent border-white/10 hover:bg-neutral-800 text-neutral-400 transition-all rounded-xl cursor-pointer px-3" title="View ReAct Agent Trace">
+                                <ActivityIcon className="w-4 h-4" />
+                            </Button>
+                        </Link>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               </motion.div>
