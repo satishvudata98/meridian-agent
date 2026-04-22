@@ -71,7 +71,7 @@ def run_agent(topic: dict, run_id: str) -> dict:
         elif phase == "researching":
             return base + "Execute your research plan. Use your tools to search the web and save important findings to memory. Once you have deep, comprehensive data, you may propose a digest using the 'create_digest' tool."
         elif phase == "writing":
-            return base + "You are now in the Writer/Critic persona. Review your proposed digest. Ensure it has an executive summary, detailed analysis with contradictions, and citations. Call 'create_digest' again to submit the finalized version."
+            return base + "You are now in the Writer/Critic persona. Review your proposed digest. Ensure it has an executive summary, detailed analysis with contradictions, and citations. You MUST call the 'create_digest' tool to submit your final work. Do not finish your turn without calling this tool."
         return base
 
     # Initial Prompt
@@ -99,6 +99,7 @@ def run_agent(topic: dict, run_id: str) -> dict:
         
         if stop_reason == "end_turn":
             print("Model finished autonomously without tools.")
+            publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "completed", "message": "Agent finished turn without submitting a digest."})
             break
             
         # Execute chosen tools
@@ -145,6 +146,10 @@ def run_agent(topic: dict, run_id: str) -> dict:
                  print("Final Digest creation triggered. Loop complete.")
                  publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "completed", "message": "Digest created successfully."})
                  break
+
+    # If we reached the end of the loop without the break in tool_use
+    if step == max_steps - 1:
+        publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "completed", "message": "Agent reached maximum step limit (15) and stopped."})
 
     return {"run_id": run_id, "steps_taken": step + 1, "status": "completed"}
 
