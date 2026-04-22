@@ -86,6 +86,7 @@ def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answ
     # Increased to 25 to accommodate Research + Code Sandbox + Self-Critique loops
     max_steps = 25
     current_phase = "planning"
+    digest_submitted = False
     
     def get_system_prompt(phase):
         base = f"You are an autonomous research agent. Your job is to thoroughly research the topic: {topic.get('name', 'General')}.\n"
@@ -139,9 +140,19 @@ def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answ
         messages.append({"role": "assistant", "content": response_content})
         
         if stop_reason == "end_turn":
-            print("Model finished autonomously without tools.")
-            publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "completed", "message": "Agent finished turn without submitting a digest."})
-            break
+            if not digest_submitted:
+                print("Model tried to exit without submitting a digest. Prodding...")
+                messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "text", 
+                        "text": "Wait! You have not submitted a final research digest. You MUST call 'create_digest' to finish the task, or 'ask_human_guidance' if you are stuck. Do not end your turn until you have finalized your work."
+                    }]
+                })
+                continue
+            else:
+                print("Model finished autonomously after digest.")
+                break
             
         # Execute chosen tools
         if stop_reason == "tool_use":
@@ -194,11 +205,12 @@ def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answ
             # Feed tool outputs back to the conversation
             messages.append({"role": "user", "content": tool_results})
             
-            # If the specific create_digest tool was successfully executed, we can break gracefully
+            # If the specific create_digest tool was successfully executed, we can mark as submitted
             if any(block.get("name") == "create_digest" for block in response_content if block.get("type") == "tool_use") and current_phase == "writing" and "SUCCESS" in str(tool_results[-1].get("content", "")):
-                 print("Final Digest creation triggered. Loop complete.")
+                 print("Final Digest creation triggered.")
+                 digest_submitted = True
                  publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "completed", "message": "Digest created successfully."})
-                 break
+                 # We don't break immediately; we let the model have one last chance to 'end_turn' cleanly
 
     # If we reached the end of the loop without the break in tool_use
     if step == max_steps - 1:
