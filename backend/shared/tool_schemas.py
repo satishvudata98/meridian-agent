@@ -84,9 +84,13 @@ TOOL_SCHEMAS = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "A list of URLs or sources used to compile this digest."
+                },
+                "confidence_score": {
+                    "type": "integer",
+                    "description": "A score from 1-100 representing your confidence in the factual accuracy and completeness of this digest."
                 }
             },
-            "required": ["topic_id", "executive_summary", "detailed_analysis", "citations"]
+            "required": ["topic_id", "executive_summary", "detailed_analysis", "citations", "confidence_score"]
         }
     }
 ]

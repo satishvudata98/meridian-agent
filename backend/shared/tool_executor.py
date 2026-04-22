@@ -88,6 +88,7 @@ class ToolExecutor:
         executive_summary = args.get('executive_summary', 'No summary provided.')
         detailed_analysis = args.get('detailed_analysis', 'No analysis provided.')
         citations = args.get('citations', [])
+        confidence = args.get('confidence_score', 90)
         
         digest_id = f"digest-{uuid.uuid4().hex[:8]}"
         created_at = datetime.utcnow().isoformat()
@@ -102,7 +103,7 @@ class ToolExecutor:
                 'detailed_analysis': detailed_analysis,
                 'citations': citations,
                 'created_at': created_at,
-                'confidence': 95 # Hardcoded for now, could be determined by LLM
+                'confidence': confidence
             })
             return f"SUCCESS: Digest {digest_id} created for topic {topic_id}."
         except Exception as e:

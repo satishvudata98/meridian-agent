@@ -129,7 +129,7 @@ export default function Home() {
                 transition={{ delay: i * 0.1, type: "spring", stiffness: 100 }}
               >
                 <Card className="bg-neutral-900/60 border-white/10 hover:border-indigo-500/50 transition-colors duration-300 group overflow-hidden relative">
-                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                   <CardHeader>
                     <div className="flex justify-between items-start">
                       <CardTitle className="text-lg text-white group-hover:text-indigo-300 transition-colors">{digest.topic_id}</CardTitle>
