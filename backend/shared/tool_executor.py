@@ -9,8 +9,9 @@ from tavily import TavilyClient
 
 
 class ToolExecutor:
-    def __init__(self, llm_client=None, memory_store=None, run_id=None):
+    def __init__(self, llm_client=None, memory_store=None, run_id=None, messages_ref=None):
         self.run_id = run_id
+        self.messages_ref = messages_ref  # Live reference to the conversation history for HITL state saving
         # Initializing the tool dependencies
         # Note: TAVILY_API_KEY must be accessible in system env params for lambda
         try:
@@ -42,6 +43,9 @@ class ToolExecutor:
                 return self._create_digest(tool_input)
             elif tool_name == "execute_code":
                 return self._execute_code(tool_input)
+            elif tool_name == "ask_human_guidance":
+                return self._ask_human_guidance(tool_input)
+
 
             else:
                 return f"Tool {tool_name} is not recognized."
@@ -169,4 +173,66 @@ class ToolExecutor:
                 return "ERROR: Execution timed out."
             except Exception as e:
                 return f"ERROR: {str(e)}"
+
+    def _ask_human_guidance(self, args):
+        """Pauses the agent, saves full state to DynamoDB, and returns a sentinel signal."""
+        import time
+        question = args.get("question", "")
+        context = args.get("context", "")
+        
+        hitl_table = os.environ.get("HITL_TABLE", "AgentPausedState")
+        ws_endpoint = os.environ.get("WS_API_ENDPOINT", "")
+        
+        now = int(time.time())
+        expires_at = now + 7200   # 2-hour response window
+        ttl = now + 86400         # 24-hour DynamoDB TTL for table hygiene
+
+        try:
+            dynamodb = boto3.resource('dynamodb')
+            table = dynamodb.Table(hitl_table)
+            table.put_item(Item={
+                "run_id": self.run_id or "unknown",
+                "question": question,
+                "context": context,
+                "status": "awaiting_input",
+                "created_at": __import__("datetime").datetime.utcnow().isoformat(),
+                "expires_at": expires_at,
+                "ttl": ttl,
+                # Save full conversation history so the agent can resume exactly where it stopped
+                "messages": json.dumps(self.messages_ref or [])
+            })
+            print(f"HITL state saved for run {self.run_id}. Question: {question[:80]}...")
+        except Exception as e:
+            print(f"WARNING: Failed to save HITL state: {e}")
+            return f"ERROR: Could not save pause state. Proceed autonomously. ({e})"
+
+        # Broadcast to any open WebSocket connections so the UI updates live
+        if ws_endpoint:
+            try:
+                connections_table = dynamodb.Table("AgentConnections")
+                response = connections_table.query(
+                    IndexName='RunConnectionsIdx',
+                    KeyConditionExpression=boto3.dynamodb.conditions.Key('run_id').eq(self.run_id)
+                )
+                http_endpoint = ws_endpoint.replace('wss://', 'https://')
+                apigw = boto3.client('apigatewaymanagementapi', endpoint_url=http_endpoint)
+                for conn in response.get('Items', []):
+                    try:
+                        apigw.post_to_connection(
+                            ConnectionId=conn['connection_id'],
+                            Data=json.dumps({
+                                "type": "hitl_question",
+                                "question": question,
+                                "context": context,
+                                "run_id": self.run_id
+                            }).encode('utf-8')
+                        )
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f"WARNING: Could not broadcast HITL question via WebSocket: {e}")
+
+        # This sentinel causes handler.py to break the agent loop and exit the Lambda
+        return "__HITL_PAUSE__"
+
 

@@ -36,6 +36,7 @@ Resources:
           DB_PASSWORD: '{{resolve:ssm:/agent/db_password}}'
           DB_NAME: !ImportValue AgentDBName
           CODE_EXECUTOR_ARN: !GetAtt CodeExecutorFunction.Arn
+          HITL_TABLE: AgentPausedState
 
       # Attach Lambda to private subnets so it can securely reach RDS and route internet traffic via NAT
       VpcConfig:
@@ -105,10 +106,15 @@ Resources:
       Environment:
         Variables:
           DIGESTS_TABLE: "ResearchDigests"
+          HITL_TABLE: "AgentPausedState"
+
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBReadPolicy:
             TableName: "ResearchDigests"
+        - DynamoDBReadPolicy:
+            TableName: "AgentPausedState"
+
 
   CodeExecutorFunction:
     Type: AWS::Serverless::Function
@@ -122,6 +128,53 @@ Resources:
       Policies:
         - AWSLambdaBasicExecutionRole
 
+  # HITL: HTTP endpoint the UI calls when user submits an answer
+  HITLResumeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../../backend/
+      Handler: lambdas.hitl.resume.lambda_handler
+      Runtime: python3.12
+      Timeout: 15
+      MemorySize: 128
+      FunctionUrlConfig:
+        AuthType: NONE
+      Environment:
+        Variables:
+          HITL_TABLE: AgentPausedState
+          QUEUE_URL: !Ref AgentRunQueue
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: AgentPausedState
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt AgentRunQueue.QueueName
+
+  # HITL: EventBridge-triggered function to auto-resume stale paused runs after 2 hours
+  HITLTimeoutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../../backend/
+      Handler: lambdas.hitl.timeout.lambda_handler
+      Runtime: python3.12
+      Timeout: 60
+      MemorySize: 128
+      Environment:
+        Variables:
+          HITL_TABLE: AgentPausedState
+          QUEUE_URL: !Ref AgentRunQueue
+      Events:
+        # Runs every 30 minutes to catch expired HITL pauses
+        HITLTimeoutSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(30 minutes)
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: AgentPausedState
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt AgentRunQueue.QueueName
 
 Outputs:
   AgentRunQueueUrl:
@@ -130,3 +183,5 @@ Outputs:
     Value: !GetAtt AgentTriggerFunctionUrl.FunctionUrl
   GetDigestsUrl:
     Value: !GetAtt GetDigestsFunctionUrl.FunctionUrl
+  HITLResumeUrl:
+    Value: !GetAtt HITLResumeFunctionUrl.FunctionUrl

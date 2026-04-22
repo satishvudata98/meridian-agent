@@ -99,6 +99,38 @@ Resources:
             ProjectionType: ALL
       BillingMode: PAY_PER_REQUEST
 
+  # HITL: stores the full agent conversation state when it pauses to ask the user a question.
+  # TTL is enabled on 'expires_at' — items auto-purge after 24 hours for table hygiene.
+  AgentPausedStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AgentPausedState
+      AttributeDefinitions:
+        - AttributeName: run_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: expires_at
+          AttributeType: N
+      KeySchema:
+        - AttributeName: run_id
+          KeyType: HASH
+      # GSI lets HITLTimeoutFunction efficiently find stale paused runs
+      # without doing a full table scan
+      GlobalSecondaryIndexes:
+        - IndexName: StatusExpiresIdx
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: expires_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
 Outputs:
   AgentRunsTableName:
     Value: !Ref AgentRunsTable

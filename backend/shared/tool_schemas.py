@@ -110,5 +110,23 @@ TOOL_SCHEMAS = [
             },
             "required": ["code", "justification"]
         }
+    },
+    {
+        "name": "ask_human_guidance",
+        "description": "Use ONLY when you encounter genuine ambiguity you cannot resolve yourself — for example, two conflicting data sources with significantly different values. This pauses the research and asks the user. Do NOT use for simple decisions you can make yourself.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The precise question to ask the user. Include the conflicting data so the user can make an informed choice."
+                },
+                "context": {
+                    "type": "string",
+                    "description": "A brief summary of your research so far and exactly why you are stuck."
+                }
+            },
+            "required": ["question", "context"]
+        }
     }
 ]

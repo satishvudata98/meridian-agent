@@ -3,17 +3,43 @@
 import { useParams } from "next/navigation";
 import { useAgentRunStream } from "@/lib/useAgentRunStream";
 import { motion } from "framer-motion";
-import { TerminalIcon, CpuIcon, Loader2Icon, ArrowLeftIcon } from "lucide-react";
+import { TerminalIcon, CpuIcon, Loader2Icon, ArrowLeftIcon, MessageSquareIcon, SendIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { useState } from "react";
+
+const HITL_RESUME_URL = process.env.NEXT_PUBLIC_HITL_RESUME_URL || "";
 
 export default function RunViewer() {
   const params = useParams();
   const runId = params.run_id as string;
   const { logs, isConnected } = useAgentRunStream(runId);
   
+  const [hitlAnswer, setHitlAnswer] = useState("");
+  const [hitlSubmitting, setHitlSubmitting] = useState(false);
+  const [hitlSubmitted, setHitlSubmitted] = useState(false);
+
   const isCompleted = logs.some(log => log.status === "completed");
-  const displayLogs = logs;
+  // Check if the latest status event is an HITL pause
+  const hitlLog = logs.find(log => log.status === "awaiting_human_input");
+  const isAwaitingHumanInput = !!hitlLog && !hitlSubmitted;
+
+  const handleSubmitAnswer = async () => {
+    if (!hitlAnswer.trim() || !HITL_RESUME_URL) return;
+    setHitlSubmitting(true);
+    try {
+      await fetch(HITL_RESUME_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id: runId, answer: hitlAnswer.trim() }),
+      });
+      setHitlSubmitted(true);
+    } catch (e) {
+      console.error("Failed to submit HITL answer:", e);
+    } finally {
+      setHitlSubmitting(false);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-neutral-950 p-8">
@@ -37,6 +63,58 @@ export default function RunViewer() {
           </div>
         </header>
 
+        {/* HITL Question Card — only shown when agent is paused */}
+        {isAwaitingHumanInput && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="p-6 bg-amber-500/10 border border-amber-500/30 rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.1)] space-y-4"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/20">
+                <MessageSquareIcon className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h3 className="text-amber-300 font-bold text-base">Agent needs your guidance</h3>
+                <p className="text-amber-400/60 text-xs">The agent paused and is waiting for your input to continue</p>
+              </div>
+            </div>
+            <p className="text-amber-100/80 text-sm leading-relaxed bg-amber-500/5 rounded-xl p-4 border border-amber-500/10">
+              {hitlLog?.message || "The agent encountered ambiguity and needs your direction."}
+            </p>
+            <div className="flex gap-3">
+              <input
+                id="hitl-answer-input"
+                type="text"
+                value={hitlAnswer}
+                onChange={e => setHitlAnswer(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSubmitAnswer()}
+                placeholder="Type your guidance here..."
+                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-neutral-500 focus:outline-none focus:border-amber-500/50 transition-colors"
+              />
+              <Button
+                id="hitl-submit-button"
+                onClick={handleSubmitAnswer}
+                disabled={hitlSubmitting || !hitlAnswer.trim()}
+                className="bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded-xl px-5 flex items-center gap-2 disabled:opacity-50"
+              >
+                {hitlSubmitting ? <Loader2Icon className="animate-spin w-4 h-4" /> : <SendIcon className="w-4 h-4" />}
+                {hitlSubmitting ? "Sending..." : "Send"}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* HITL Submitted confirmation */}
+        {hitlSubmitted && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-300 text-sm text-center"
+          >
+            Answer submitted! The agent is resuming research... check back in a moment.
+          </motion.div>
+        )}
+
         <div className="bg-black/80 rounded-2xl border border-white/10 shadow-xl overflow-hidden font-mono text-sm relative">
           <div className="absolute top-0 left-0 right-0 h-8 bg-neutral-900 border-b border-white/10 flex items-center px-4 gap-2">
              <div className="w-3 h-3 rounded-full bg-rose-500/80" />
@@ -45,7 +123,7 @@ export default function RunViewer() {
              <div className="ml-4 text-xs font-sans text-neutral-600">agent-tty0 - SSH</div>
           </div>
           <div className="p-6 pt-12 min-h-[400px] flex flex-col gap-4">
-            {displayLogs.map((log, i) => (
+            {logs.map((log, i) => (
               <motion.div 
                 key={i} 
                 initial={{ opacity: 0, x: -10 }} 
@@ -54,13 +132,25 @@ export default function RunViewer() {
                 className="flex items-start gap-4 p-2 hover:bg-white/5 rounded-md transition-colors"
                >
                  <span className="text-neutral-500 shrink-0 select-none">[{log.step}]</span>
-                 <span className={`shrink-0 ${log.status === "tool_use" ? "text-indigo-400 font-semibold" : (log.status === "completed" ? "text-emerald-400 font-bold" : "text-neutral-200")}`}>
-                   {log.status === "tool_use" ? `[λ ${log.tool}]` : (log.status === "completed" ? "[done]" : "[agent]")}
+                 <span className={`shrink-0 ${
+                   log.status === "tool_use" ? "text-indigo-400 font-semibold" :
+                   log.status === "completed" ? "text-emerald-400 font-bold" :
+                   log.status === "awaiting_human_input" ? "text-amber-400 font-bold" :
+                   "text-neutral-200"}`}>
+                   {log.status === "tool_use" ? `[λ ${log.tool}]` :
+                    log.status === "completed" ? "[done]" :
+                    log.status === "awaiting_human_input" ? "[⏸ paused]" :
+                    "[agent]"}
                  </span>
-                 <span className={log.status === "tool_use" ? "text-indigo-200" : (log.status === "completed" ? "text-emerald-300 font-medium" : "text-emerald-300")}>{log.message || log.status}</span>
+                 <span className={
+                   log.status === "tool_use" ? "text-indigo-200" :
+                   log.status === "completed" ? "text-emerald-300 font-medium" :
+                   log.status === "awaiting_human_input" ? "text-amber-300" :
+                   "text-emerald-300"
+                 }>{log.message || log.status}</span>
               </motion.div>
             ))}
-            {!isCompleted && (
+            {!isCompleted && !isAwaitingHumanInput && (
               <div className="text-neutral-500 animate-pulse flex items-center gap-2 mt-4 ml-2">
                   <Loader2Icon className="animate-spin w-4 h-4"/> Awaiting lambda pulse...
               </div>
@@ -71,7 +161,7 @@ export default function RunViewer() {
                 animate={{ opacity: 1, y: 0 }} 
                 className="mt-8 p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex flex-col items-center gap-4 text-center"
               >
-                <h3 className="text-xl font-bold text-emerald-400">Run Completed Successfully! 🎉</h3>
+                <h3 className="text-xl font-bold text-emerald-400">Run Completed Successfully!</h3>
                 <p className="text-emerald-200/70 text-sm">The agent has finished compiling the research digest.</p>
                 <Link href="/">
                   <Button className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] px-8 rounded-full mt-2">
@@ -86,3 +176,6 @@ export default function RunViewer() {
     </main>
   );
 }
+
+
+

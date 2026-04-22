@@ -19,7 +19,7 @@ from shared.metrics_publisher import MetricsPublisher
 from shared.memory_store import MemoryStore
 
 @xray_recorder.capture('run_agent_loop')
-def run_agent(topic: dict, run_id: str) -> dict:
+def run_agent(topic: dict, run_id: str, resume_messages: list = None, human_answer: str = None) -> dict:
     llm = get_llm_client()
     
     # Initialize long-term vector memory. Gracefully skip if DB is unreachable.
@@ -98,12 +98,30 @@ def run_agent(topic: dict, run_id: str) -> dict:
         return base
 
     # Initial Prompt
-    messages = [
-        {
-            "role": "user", 
-            "content": [{"type": "text", "text": f"Research this topic and create a digest: {topic.get('name', 'General')}"}]
-        }
-    ]
+    # On resume: restore the full conversation history from the paused state.
+    # On fresh run: start with the initial research prompt.
+    if resume_messages:
+        messages = resume_messages
+        # Inject the human's answer as a tool_result so the agent understands what was said
+        messages.append({
+            "role": "user",
+            "content": [{
+                "type": "text",
+                "text": f"[HUMAN GUIDANCE RECEIVED]: {human_answer}\n\nNow continue your research and produce the final digest."
+            }]
+        })
+        print(f"Resuming HITL run {run_id} with human answer: {human_answer[:80]}...")
+    else:
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": f"Research this topic and create a digest: {topic.get('name', 'General')}"}]
+            }
+        ]
+
+    # Pass a live reference to the messages list so the HITL tool can snapshot the full conversation
+    executor.messages_ref = messages
+
 
     for step in range(max_steps):
         print(f"\n--- Step {step + 1} | Phase: {current_phase} ---")
@@ -153,7 +171,19 @@ def run_agent(topic: dict, run_id: str) -> dict:
                             print(f" -> Tool result snippet: {str(result)[:100]}...")
                     else:
                         result = executor.execute(tool_name, tool_input)
-                        print(f" -> Tool result snippet: {str(result)[:100]}...")
+                        
+                    # HITL Pause: agent saved its state and wants to exit cleanly
+                    if str(result) == "__HITL_PAUSE__":
+                        print("HITL pause requested. Saving state and exiting Lambda.")
+                        publish_ws_event(run_id, {
+                            "step": step,
+                            "phase": current_phase,
+                            "status": "awaiting_human_input",
+                            "message": "Agent is waiting for your guidance."
+                        })
+                        return {"run_id": run_id, "steps_taken": step + 1, "status": "awaiting_human_input"}
+
+                    print(f" -> Tool result snippet: {str(result)[:100]}...")
                     
                     tool_results.append({
                         "type": "tool_result",
@@ -177,15 +207,28 @@ def run_agent(topic: dict, run_id: str) -> dict:
     return {"run_id": run_id, "steps_taken": step + 1, "status": "completed"}
 
 def lambda_handler(event, context):
-    """AWS Lambda entry point responding to SQS"""
+    """AWS Lambda entry point responding to SQS — handles both fresh runs and HITL resumes."""
     for record in event.get('Records', []):
         body = json.loads(record['body'])
-        topic = {"name": body.get("topic_name", "Unknown")}
-        run_id = body.get("run_id", "local_test_run")
-        
-        result = run_agent(topic, run_id)
+        run_type = body.get('type', 'fresh_run')
+        run_id = body.get('run_id', 'local_test_run')
+
+        if run_type == 'hitl_resume':
+            # Resume a paused run using the saved conversation history
+            topic = {"name": body.get("topic_name", "Unknown")}
+            saved_messages = json.loads(body.get("messages", "[]"))
+            human_answer = body.get("human_answer", "Proceed with your best judgment.")
+            result = run_agent(
+                topic, run_id,
+                resume_messages=saved_messages,
+                human_answer=human_answer
+            )
+        else:
+            topic = {"name": body.get("topic_name", "Unknown")}
+            result = run_agent(topic, run_id)
+
         print(f"Agent finished: {result}")
-        
+
     return {"statusCode": 200, "body": "Success"}
 
 if __name__ == "__main__":
