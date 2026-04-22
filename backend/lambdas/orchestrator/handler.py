@@ -83,7 +83,8 @@ def run_agent(topic: dict, run_id: str) -> dict:
         except Exception as e:
             print(f"WebSocket broadcast failed: {e}")
     
-    max_steps = 15
+    # Increased to 25 to accommodate Research + Code Sandbox + Self-Critique loops
+    max_steps = 25
     current_phase = "planning"
     
     def get_system_prompt(phase):
