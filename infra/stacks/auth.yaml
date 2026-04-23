@@ -6,6 +6,9 @@ Parameters:
   HostedUiDomainPrefix:
     Type: String
     Description: Unique Cognito Hosted UI domain prefix for this environment.
+  GoogleClientSecret:
+    Type: String
+    NoEcho: true
 
 Resources:
   AuthUserPool:
@@ -51,7 +54,7 @@ Resources:
       ProviderDetails:
         authorize_scopes: email openid profile
         client_id: '{{resolve:ssm:/agent/auth/google_client_id}}'
-        client_secret: '{{resolve:ssm-secure:/agent/auth/google_client_secret}}'
+        client_secret: !Ref GoogleClientSecret
       AttributeMapping:
         email: email
         name: name

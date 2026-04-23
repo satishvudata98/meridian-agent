@@ -1,6 +1,6 @@
 # AWS Infrastructure And Services
 
-Last updated: 2026-04-22
+Last updated: 2026-04-23
 
 The infrastructure is defined with AWS SAM and CloudFormation nested stacks under `infra/`. This document reflects the current templates, including newer networking, HITL, and code-execution resources.
 
@@ -14,10 +14,10 @@ The root template composes six nested applications:
 - `DataStack`: DynamoDB tables.
 - `MemoryStack`: S3 raw-doc bucket, Redis cache, and PostgreSQL memory database.
 - `ApiStack`: WebSocket API and WebSocket manager Lambda.
-- `AgentStack`: SQS, orchestrator, trigger, digests, code executor, and HITL Lambdas.
+- `AgentStack`: HTTP API, SQS, orchestrator, trigger, digests, code executor, and HITL Lambdas.
 - `ObservabilityStack`: cost alarm SNS topic, EventBridge schedule, and guardrail Lambda.
 
-`AgentStack` depends on networking and memory so the orchestrator can run inside private subnets and reach RDS.
+`AgentStack` depends on auth, networking, memory, and the WebSocket stack outputs so the HTTP API can validate JWTs, the orchestrator can run inside private subnets, and the orchestrator can publish live trace events.
 
 ## 2. Network Stack
 
@@ -83,7 +83,6 @@ File: `infra/stacks/api.yaml`
 
 Resources:
 
-- `HttpApi`: an HTTP API shell with permissive CORS. No current Lambda routes are attached in this template.
 - `WebSocketApi`: API Gateway V2 WebSocket API named `AgentRunsWebSocket`.
 - `WebSocketStage`: `prod`, auto-deploy enabled.
 - `WebSocketManagerFunction`: handles `$connect`, `$disconnect`, and `$default`.
@@ -91,14 +90,17 @@ Resources:
 
 Outputs:
 
-- `HttpApiUrl`
 - `WebSocketApiUrl`
 
-Important distinction: the dashboard's trigger, digest, and HITL resume calls currently use Lambda Function URLs created in `agent.yaml`, while this stack provides the WebSocket API used for live run traces.
+This stack now owns only the WebSocket API used for live run traces. The authenticated HTTP API lives in `agent.yaml` so SAM can bind the Lambda `HttpApi` events to an `AWS::Serverless::HttpApi` in the same template.
 
 ## 6. Agent Stack
 
 File: `infra/stacks/agent.yaml`
+
+HTTP API:
+
+- `HttpApi`: authenticated HTTP API shell with Cognito JWT authorizer.
 
 Queueing:
 
@@ -108,11 +110,12 @@ Queueing:
 
 Functions:
 
-- `AgentTriggerFunction`: Function URL, validates a topic and queues a fresh run.
+- `AgentTriggerFunction`: authenticated HTTP API target, validates a topic and queues a fresh run.
 - `AgentOrchestratorFunction`: SQS consumer, 900-second timeout, VPC-enabled, runs the agent loop.
-- `GetDigestsFunction`: Function URL, returns completed digests plus active paused runs.
+- `RunStreamTicketFunction`: authenticated HTTP API target that mints short-lived WebSocket stream tickets.
+- `GetDigestsFunction`: authenticated HTTP API target, returns completed digests plus active paused runs.
 - `CodeExecutorFunction`: isolated Lambda for Python code execution.
-- `HITLResumeFunction`: Function URL, accepts human answers and requeues paused runs.
+- `HITLResumeFunction`: authenticated HTTP API target that accepts human answers and requeues paused runs.
 - `HITLTimeoutFunction`: EventBridge scheduled function that auto-resumes expired HITL pauses every 30 minutes.
 
 Key orchestrator environment variables:
@@ -130,6 +133,8 @@ Key orchestrator environment variables:
 
 Outputs:
 
+- `HttpApiUrl`
+- `HttpApiId`
 - `AgentRunQueueUrl`
 - `AgentTriggerUrl`
 - `GetDigestsUrl`
@@ -150,11 +155,12 @@ Current caveat: the `MetricsPublisher` helper must be called by the orchestrator
 ## 8. Security And Access Notes
 
 - Lambda Function URLs are currently configured as unauthenticated (`AuthType: NONE`).
-- The WebSocket API has no custom authorizer in the current template.
+- The primary frontend path now uses the authenticated HTTP API with a Cognito JWT authorizer.
+- The WebSocket API has no custom authorizer in the current template, but the run page now requests a short-lived stream ticket before connecting.
 - RDS is private and accepts PostgreSQL traffic only from the Lambda security group.
 - The orchestrator runs in private subnets and uses NAT for outbound access to external services.
 - The code executor Lambda intentionally has no VPC configuration and no application IAM permissions beyond logging.
-- Secrets are injected using SSM dynamic references such as `{{resolve:ssm:OPENAI_API_KEY}}`, `{{resolve:ssm:TAVILY_API_KEY}}`, and `{{resolve:ssm:/agent/db_password}}`.
+- Secrets are injected using SSM dynamic references such as `{{resolve:ssm-secure:OPENAI_API_KEY}}`, `{{resolve:ssm-secure:TAVILY_API_KEY}}`, and `{{resolve:ssm-secure:/agent/db_password}}`.
 
 ## 9. Cost Notes
 

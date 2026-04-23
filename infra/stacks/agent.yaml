@@ -9,6 +9,18 @@ Parameters:
     Type: String
   WebSocketApiUrl:
     Type: String
+  TavilyApiKey:
+    Type: String
+    NoEcho: true
+  OpenAiApiKey:
+    Type: String
+    NoEcho: true
+  RunAccessSecret:
+    Type: String
+    NoEcho: true
+  DatabasePassword:
+    Type: String
+    NoEcho: true
 
 Resources:
   HttpApi:
@@ -57,15 +69,15 @@ Resources:
       Environment:
         Variables:
           # Will pull from SSM or environment overrides automatically in AWS
-          TAVILY_API_KEY: "{{resolve:ssm-secure:TAVILY_API_KEY}}"
-          OPENAI_API_KEY: "{{resolve:ssm-secure:OPENAI_API_KEY}}"
-          RUN_ACCESS_SECRET: '{{resolve:ssm-secure:/agent/run_access_secret}}'
+          TAVILY_API_KEY: !Ref TavilyApiKey
+          OPENAI_API_KEY: !Ref OpenAiApiKey
+          RUN_ACCESS_SECRET: !Ref RunAccessSecret
           LLM_PROVIDER: "openai"
           WS_API_ENDPOINT: !Ref WebSocketApiUrl
           # Database connection — sourced from the MemoryStack output
           DB_HOST: !ImportValue AgentDBEndpointAddress
           DB_USER: agentadmin
-          DB_PASSWORD: '{{resolve:ssm-secure:/agent/db_password}}'
+          DB_PASSWORD: !Ref DatabasePassword
           DB_NAME: !ImportValue AgentDBName
           CODE_EXECUTOR_ARN: !GetAtt CodeExecutorFunction.Arn
           HITL_TABLE: AgentPausedState
@@ -123,7 +135,7 @@ Resources:
         Variables:
           QUEUE_URL: !Ref AgentRunQueue
           RUNS_TABLE: AgentRuns
-          RUN_ACCESS_SECRET: '{{resolve:ssm-secure:/agent/run_access_secret}}'
+          RUN_ACCESS_SECRET: !Ref RunAccessSecret
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
@@ -149,7 +161,7 @@ Resources:
       Environment:
         Variables:
           RUNS_TABLE: AgentRuns
-          RUN_ACCESS_SECRET: '{{resolve:ssm-secure:/agent/run_access_secret}}'
+          RUN_ACCESS_SECRET: !Ref RunAccessSecret
           STREAM_TICKET_TTL_SECONDS: '900'
       Policies:
         - AWSLambdaBasicExecutionRole
@@ -220,7 +232,7 @@ Resources:
         Variables:
           HITL_TABLE: AgentPausedState
           QUEUE_URL: !Ref AgentRunQueue
-          RUN_ACCESS_SECRET: '{{resolve:ssm-secure:/agent/run_access_secret}}'
+          RUN_ACCESS_SECRET: !Ref RunAccessSecret
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:

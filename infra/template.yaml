@@ -22,6 +22,7 @@ Resources:
       Location: stacks/auth.yaml
       Parameters:
         HostedUiDomainPrefix: !Sub 'meridian-agent-${AWS::Region}-${AWS::AccountId}'
+        GoogleClientSecret: '{{resolve:ssm-secure:/agent/auth/google_client_secret}}'
 
   # 4. Memory (RDS, Redis, S3) — depends on network for VPC + SG imports
   MemoryStack:
@@ -35,6 +36,8 @@ Resources:
     Type: AWS::Serverless::Application
     Properties:
       Location: stacks/api.yaml
+      Parameters:
+        RunAccessSecret: '{{resolve:ssm-secure:/agent/run_access_secret}}'
 
   # 6. Agent compute — owns the HTTP API and depends on networking, memory, auth, and websocket outputs
   AgentStack:
@@ -50,6 +53,10 @@ Resources:
         CognitoUserPoolId: !GetAtt AuthStack.Outputs.UserPoolId
         CognitoUserPoolClientId: !GetAtt AuthStack.Outputs.UserPoolClientId
         WebSocketApiUrl: !GetAtt ApiStack.Outputs.WebSocketApiUrl
+        TavilyApiKey: '{{resolve:ssm-secure:TAVILY_API_KEY}}'
+        OpenAiApiKey: '{{resolve:ssm-secure:OPENAI_API_KEY}}'
+        RunAccessSecret: '{{resolve:ssm-secure:/agent/run_access_secret}}'
+        DatabasePassword: '{{resolve:ssm-secure:/agent/db_password}}'
 
   # 7. Observability — standalone cost guardrail
   ObservabilityStack:

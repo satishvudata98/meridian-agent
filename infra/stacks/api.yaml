@@ -2,6 +2,11 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: AI Research Agent - API Gateway
 
+Parameters:
+  RunAccessSecret:
+    Type: String
+    NoEcho: true
+
 Resources:
   # The Websocket Shell
   WebSocketApi:
@@ -35,7 +40,7 @@ Resources:
       Environment:
         Variables:
           CONNECTIONS_TABLE: "AgentConnections"
-          RUN_ACCESS_SECRET: '{{resolve:ssm-secure:/agent/run_access_secret}}'
+          RUN_ACCESS_SECRET: !Ref RunAccessSecret
       Policies:
         - DynamoDBCrudPolicy:
             TableName: "AgentConnections"
