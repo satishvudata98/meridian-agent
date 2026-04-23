@@ -15,7 +15,6 @@ patch_all()
 from shared.llm_factory import get_llm_client
 from shared.tool_schemas import TOOL_SCHEMAS
 from shared.tool_executor import ToolExecutor
-from shared.metrics_publisher import MetricsPublisher
 from shared.memory_store import MemoryStore
 
 VALID_PHASES = {"planning", "researching", "writing"}
@@ -48,6 +47,7 @@ def _find_unanswered_tool_uses(messages: list) -> list:
 def run_agent(
     topic: dict,
     run_id: str,
+    user_id: str = None,
     resume_messages: list = None,
     human_answer: str = None,
     resume_phase: str = None,
@@ -79,13 +79,15 @@ def run_agent(
         llm_client=llm,
         memory_store=memory_store,
         run_id=run_id,
-        topic_name=topic.get('name', 'Unknown')
+        topic_name=topic.get('name', 'Unknown'),
+        user_id=user_id,
     )
-    metrics = MetricsPublisher()
     
     # Store annotations for AWS X-Ray Filtering
     xray_recorder.put_annotation("topic_id", topic.get('name', 'Unknown'))
     xray_recorder.put_annotation("run_id", run_id)
+    if user_id:
+        xray_recorder.put_annotation("user_id", user_id)
     
     ws_endpoint = os.environ.get("WS_API_ENDPOINT")
     
@@ -304,6 +306,7 @@ def lambda_handler(event, context):
         body = json.loads(record['body'])
         run_type = body.get('type', 'fresh_run')
         run_id = body.get('run_id', 'local_test_run')
+        user_id = body.get('user_id')
 
         if run_type == 'hitl_resume':
             # Resume a paused run using the saved conversation history
@@ -312,6 +315,7 @@ def lambda_handler(event, context):
             human_answer = body.get("human_answer", "Proceed with your best judgment.")
             result = run_agent(
                 topic, run_id,
+                user_id=user_id,
                 resume_messages=saved_messages,
                 human_answer=human_answer,
                 resume_phase=body.get("phase", "researching"),
@@ -319,7 +323,7 @@ def lambda_handler(event, context):
             )
         else:
             topic = {"name": body.get("topic_name", "Unknown")}
-            result = run_agent(topic, run_id)
+            result = run_agent(topic, run_id, user_id=user_id)
 
         print(f"Agent finished: {result}")
 

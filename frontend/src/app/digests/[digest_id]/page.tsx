@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import { ArrowLeftIcon, FileTextIcon, Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { listDigests } from "@/lib/apiClient";
 
 type Digest = {
   digest_id?: string;
@@ -27,18 +28,11 @@ export default function DigestView() {
   useEffect(() => {
     const fetchDigest = async () => {
       try {
-        const url = process.env.NEXT_PUBLIC_GET_DIGESTS_URL;
-        if (!url) return;
-        
-        const response = await fetch(url);
-        if (response.ok) {
-          const data = await response.json();
-          // Find the specific digest from the bulk response
-          const found = Array.isArray(data)
-            ? data.find((d: Digest) => d.digest_id === digestId)
-            : null;
-          setDigest(found);
-        }
+        const data = await listDigests<Digest[]>();
+        const found = Array.isArray(data)
+          ? data.find((d: Digest) => d.digest_id === digestId)
+          : null;
+        setDigest(found || null);
       } catch (err) {
         console.error("Failed to fetch digest", err);
       } finally {
@@ -101,8 +95,8 @@ export default function DigestView() {
             <div className="mt-12 p-6 bg-neutral-900/50 rounded-2xl border border-white/5">
               <h2 className="text-xl text-neutral-200 mb-4 flex items-center gap-2">Sources & Citations</h2>
               <ul className="list-disc list-inside space-y-2 text-sm text-neutral-400">
-                {digest.citations.map((url: string, i: number) => (
-                  <li key={i}>
+                {digest.citations.map((url: string) => (
+                  <li key={url}>
                     <a href={url} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 transition-colors">
                       {url}
                     </a>

@@ -2,6 +2,12 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: AI Research Agent - Orchestrator and SQS
 
+Parameters:
+  HttpApiId:
+    Type: String
+  WebSocketApiUrl:
+    Type: String
+
 Resources:
   AgentRunDeadLetterQueue:
     Type: AWS::SQS::Queue
@@ -26,14 +32,15 @@ Resources:
       Environment:
         Variables:
           # Will pull from SSM or environment overrides automatically in AWS
-          TAVILY_API_KEY: "{{resolve:ssm:TAVILY_API_KEY}}"
-          OPENAI_API_KEY: "{{resolve:ssm:OPENAI_API_KEY}}"
+          TAVILY_API_KEY: "{{resolve:ssm-secure:TAVILY_API_KEY}}"
+          OPENAI_API_KEY: "{{resolve:ssm-secure:OPENAI_API_KEY}}"
+          RUN_ACCESS_SECRET: '{{resolve:ssm-secure:/agent/run_access_secret}}'
           LLM_PROVIDER: "openai"
-          WS_API_ENDPOINT: "{{resolve:ssm:WS_API_ENDPOINT}}"
+          WS_API_ENDPOINT: !Ref WebSocketApiUrl
           # Database connection — sourced from the MemoryStack output
           DB_HOST: !ImportValue AgentDBEndpointAddress
           DB_USER: agentadmin
-          DB_PASSWORD: '{{resolve:ssm:/agent/db_password}}'
+          DB_PASSWORD: '{{resolve:ssm-secure:/agent/db_password}}'
           DB_NAME: !ImportValue AgentDBName
           CODE_EXECUTOR_ARN: !GetAtt CodeExecutorFunction.Arn
           HITL_TABLE: AgentPausedState
@@ -90,10 +97,46 @@ Resources:
       Environment:
         Variables:
           QUEUE_URL: !Ref AgentRunQueue
+          RUNS_TABLE: AgentRuns
+          RUN_ACCESS_SECRET: '{{resolve:ssm-secure:/agent/run_access_secret}}'
       Policies:
         - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: AgentRuns
         - SQSSendMessagePolicy:
             QueueName: !GetAtt AgentRunQueue.QueueName
+      Events:
+        AuthenticatedRunCreate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApiId
+            Path: /runs
+            Method: POST
+
+  RunStreamTicketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../../backend/
+      Handler: lambdas.api.stream_ticket.lambda_handler
+      Runtime: python3.12
+      Timeout: 15
+      MemorySize: 128
+      Environment:
+        Variables:
+          RUNS_TABLE: AgentRuns
+          RUN_ACCESS_SECRET: '{{resolve:ssm-secure:/agent/run_access_secret}}'
+          STREAM_TICKET_TTL_SECONDS: '900'
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBReadPolicy:
+            TableName: AgentRuns
+      Events:
+        AuthenticatedStreamTicket:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApiId
+            Path: /runs/{run_id}/stream-ticket
+            Method: POST
 
   GetDigestsFunction:
     Type: AWS::Serverless::Function
@@ -116,6 +159,13 @@ Resources:
             TableName: "ResearchDigests"
         - DynamoDBReadPolicy:
             TableName: "AgentPausedState"
+      Events:
+        AuthenticatedDigestList:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApiId
+            Path: /digests
+            Method: GET
 
 
   CodeExecutorFunction:
@@ -145,12 +195,20 @@ Resources:
         Variables:
           HITL_TABLE: AgentPausedState
           QUEUE_URL: !Ref AgentRunQueue
+          RUN_ACCESS_SECRET: '{{resolve:ssm-secure:/agent/run_access_secret}}'
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
             TableName: AgentPausedState
         - SQSSendMessagePolicy:
             QueueName: !GetAtt AgentRunQueue.QueueName
+      Events:
+        AuthenticatedHitlResume:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApiId
+            Path: /runs/{run_id}/resume
+            Method: POST
 
   # HITL: EventBridge-triggered function to auto-resume stale paused runs after 2 hours
   HITLTimeoutFunction:

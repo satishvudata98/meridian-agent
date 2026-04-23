@@ -1,15 +1,13 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useAgentRunStream } from "@/lib/useAgentRunStream";
+import { useAgentRunStream, type LogEntry } from "@/lib/useAgentRunStream";
 import { motion } from "framer-motion";
 import { CpuIcon, Loader2Icon, ArrowLeftIcon, MessageSquareIcon, SendIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
-
-const HITL_RESUME_URL = process.env.NEXT_PUBLIC_HITL_RESUME_URL || "";
-const GET_DIGESTS_URL = process.env.NEXT_PUBLIC_GET_DIGESTS_URL || "";
+import { createStreamTicket, listDigests, resumeRun } from "@/lib/apiClient";
 
 type PausedRun = {
   run_id: string;
@@ -19,10 +17,77 @@ type PausedRun = {
   status?: string;
 };
 
+type StreamTicketResponse = {
+  run_access_token: string;
+};
+
+type StreamTicketState = {
+  runId: string;
+  token: string | null;
+  error: string;
+};
+
+function getLogPresentation(log: LogEntry) {
+  if (log.status === "tool_use") {
+    return {
+      badgeClassName: "text-indigo-400 font-semibold",
+      badgeLabel: `[λ ${log.tool}]`,
+      messageClassName: "text-indigo-200",
+    };
+  }
+
+  if (log.status === "completed") {
+    return {
+      badgeClassName: "text-emerald-400 font-bold",
+      badgeLabel: "[done]",
+      messageClassName: "text-emerald-300 font-medium",
+    };
+  }
+
+  if (log.status === "awaiting_human_input") {
+    return {
+      badgeClassName: "text-amber-400 font-bold",
+      badgeLabel: "[⏸ paused]",
+      messageClassName: "text-amber-300",
+    };
+  }
+
+  return {
+    badgeClassName: "text-neutral-200",
+    badgeLabel: "[agent]",
+    messageClassName: "text-emerald-300",
+  };
+}
+
+function RunLogLine({ log }: Readonly<{ log: LogEntry }>) {
+  const presentation = getLogPresentation(log);
+
+  return (
+    <motion.div
+      key={log.entryId}
+      initial={{ opacity: 0, x: -10 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: 0.1 }}
+      className="flex items-start gap-4 p-2 hover:bg-white/5 rounded-md transition-colors"
+    >
+      <span className="text-neutral-500 shrink-0 select-none">[{log.step}]</span>
+      <span className={presentation.badgeClassName}>{presentation.badgeLabel}</span>
+      <span className={presentation.messageClassName}>{log.message || log.status}</span>
+    </motion.div>
+  );
+}
+
 export default function RunViewer() {
   const params = useParams();
   const runId = params.run_id as string;
-  const { logs, isConnected } = useAgentRunStream(runId);
+  const [streamTicketState, setStreamTicketState] = useState<StreamTicketState>({
+    runId,
+    token: null,
+    error: "",
+  });
+  const runAccessToken = streamTicketState.runId === runId ? streamTicketState.token : null;
+  const streamTicketError = streamTicketState.runId === runId ? streamTicketState.error : "";
+  const { logs, isConnected } = useAgentRunStream(runId, runAccessToken);
   
   const [hitlAnswer, setHitlAnswer] = useState("");
   const [hitlSubmitting, setHitlSubmitting] = useState(false);
@@ -31,12 +96,38 @@ export default function RunViewer() {
   const [hitlError, setHitlError] = useState("");
 
   useEffect(() => {
+    let isActive = true;
+
+    const ticketPromise = createStreamTicket<StreamTicketResponse>(runId);
+    ticketPromise
+      .then((ticket: StreamTicketResponse) => {
+        if (isActive) {
+          setStreamTicketState({
+            runId,
+            token: ticket.run_access_token,
+            error: "",
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (isActive) {
+          setStreamTicketState({
+            runId,
+            token: null,
+            error: error instanceof Error ? error.message : "Failed to request a live trace stream ticket.",
+          });
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [runId]);
+
+  useEffect(() => {
     const fetchPausedRun = async () => {
-      if (!GET_DIGESTS_URL) return;
       try {
-        const response = await fetch(GET_DIGESTS_URL);
-        if (!response.ok) return;
-        const data = await response.json();
+        const data = await listDigests<PausedRun[]>();
         const found = (data || []).find((item: PausedRun) => (
           item.run_id === runId && item.status === "awaiting_input"
         ));
@@ -58,21 +149,9 @@ export default function RunViewer() {
   const handleSubmitAnswer = async () => {
     setHitlError("");
     if (!hitlAnswer.trim()) return;
-    if (!HITL_RESUME_URL) {
-      setHitlError("Missing NEXT_PUBLIC_HITL_RESUME_URL in the deployed frontend environment.");
-      return;
-    }
     setHitlSubmitting(true);
     try {
-      const response = await fetch(HITL_RESUME_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_id: runId, answer: hitlAnswer.trim() }),
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `Resume failed with status ${response.status}`);
-      }
+      await resumeRun<{ message: string; run_id: string }>(runId, hitlAnswer.trim(), runAccessToken);
       setHitlSubmitted(true);
       setPausedRun(null);
     } catch (e) {
@@ -104,6 +183,12 @@ export default function RunViewer() {
              {isConnected ? "Live Connection" : "Disconnected"}
           </div>
         </header>
+
+        {!runAccessToken && (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            {streamTicketError || "Live trace access is unavailable until a short-lived stream ticket is issued for this run."}
+          </div>
+        )}
 
         {/* HITL Question Card — only shown when agent is paused */}
         {isAwaitingHumanInput && (
@@ -173,33 +258,7 @@ export default function RunViewer() {
              <div className="ml-4 text-xs font-sans text-neutral-600">agent-tty0 - SSH</div>
           </div>
           <div className="p-6 pt-12 min-h-[400px] flex flex-col gap-4">
-            {logs.map((log, i) => (
-              <motion.div 
-                key={i} 
-                initial={{ opacity: 0, x: -10 }} 
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 }}
-                className="flex items-start gap-4 p-2 hover:bg-white/5 rounded-md transition-colors"
-               >
-                 <span className="text-neutral-500 shrink-0 select-none">[{log.step}]</span>
-                 <span className={`shrink-0 ${
-                   log.status === "tool_use" ? "text-indigo-400 font-semibold" :
-                   log.status === "completed" ? "text-emerald-400 font-bold" :
-                   log.status === "awaiting_human_input" ? "text-amber-400 font-bold" :
-                   "text-neutral-200"}`}>
-                   {log.status === "tool_use" ? `[λ ${log.tool}]` :
-                    log.status === "completed" ? "[done]" :
-                    log.status === "awaiting_human_input" ? "[⏸ paused]" :
-                    "[agent]"}
-                 </span>
-                 <span className={
-                   log.status === "tool_use" ? "text-indigo-200" :
-                   log.status === "completed" ? "text-emerald-300 font-medium" :
-                   log.status === "awaiting_human_input" ? "text-amber-300" :
-                   "text-emerald-300"
-                 }>{log.message || log.status}</span>
-              </motion.div>
-            ))}
+            {logs.map((log) => <RunLogLine key={log.entryId} log={log} />)}
             {!isCompleted && !isAwaitingHumanInput && (
               <div className="text-neutral-500 animate-pulse flex items-center gap-2 mt-4 ml-2">
                   <Loader2Icon className="animate-spin w-4 h-4"/> Awaiting lambda pulse...

@@ -15,30 +15,60 @@ Resources:
     Properties:
       Location: stacks/data.yaml
 
-  # 3. Memory (RDS, Redis, S3) — depends on network for VPC + SG imports
+  # 3. Cognito auth foundation for Google sign-in and JWT validation
+  AuthStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: stacks/auth.yaml
+      Parameters:
+        HostedUiDomainPrefix: !Sub 'meridian-agent-${AWS::Region}-${AWS::AccountId}'
+
+  # 4. Memory (RDS, Redis, S3) — depends on network for VPC + SG imports
   MemoryStack:
     Type: AWS::Serverless::Application
     DependsOn: NetworkStack
     Properties:
       Location: stacks/memory.yaml
 
-  # 4. API Gateway (WebSocket & HTTP) — standalone
+  # 5. API Gateway (WebSocket & HTTP) — depends on auth for JWT authorizer scaffolding
   ApiStack:
     Type: AWS::Serverless::Application
+    DependsOn: AuthStack
     Properties:
       Location: stacks/api.yaml
+      Parameters:
+        CognitoUserPoolId: !GetAtt AuthStack.Outputs.UserPoolId
+        CognitoUserPoolClientId: !GetAtt AuthStack.Outputs.UserPoolClientId
 
-  # 5. Agent compute — depends on networking (for VPC) and memory (for DB endpoint)
+  # 6. Agent compute — depends on networking (for VPC) and memory (for DB endpoint)
   AgentStack:
     Type: AWS::Serverless::Application
     DependsOn:
       - NetworkStack
       - MemoryStack
+      - ApiStack
     Properties:
       Location: stacks/agent.yaml
+      Parameters:
+        HttpApiId: !GetAtt ApiStack.Outputs.HttpApiId
+        WebSocketApiUrl: !GetAtt ApiStack.Outputs.WebSocketApiUrl
 
-  # 6. Observability — standalone cost guardrail
+  # 7. Observability — standalone cost guardrail
   ObservabilityStack:
     Type: AWS::Serverless::Application
     Properties:
       Location: stacks/observability.yaml
+
+Outputs:
+  CognitoUserPoolId:
+    Value: !GetAtt AuthStack.Outputs.UserPoolId
+  CognitoUserPoolClientId:
+    Value: !GetAtt AuthStack.Outputs.UserPoolClientId
+  CognitoHostedUiBaseUrl:
+    Value: !GetAtt AuthStack.Outputs.HostedUiBaseUrl
+  CognitoJwtIssuer:
+    Value: !GetAtt AuthStack.Outputs.JwtIssuer
+  MeridianHttpApiUrl:
+    Value: !GetAtt ApiStack.Outputs.HttpApiUrl
+  MeridianWebSocketApiUrl:
+    Value: !GetAtt ApiStack.Outputs.WebSocketApiUrl

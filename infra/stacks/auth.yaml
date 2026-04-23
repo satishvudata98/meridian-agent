@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AI Research Agent - Cognito Authentication
+
+Parameters:
+  HostedUiDomainPrefix:
+    Type: String
+    Description: Unique Cognito Hosted UI domain prefix for this environment.
+
+Resources:
+  AuthUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: MeridianAgentUsers
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 14
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 7
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+        - Name: picture
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+
+  GoogleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Properties:
+      ProviderName: Google
+      ProviderType: Google
+      UserPoolId: !Ref AuthUserPool
+      ProviderDetails:
+        authorize_scopes: email openid profile
+        client_id: '{{resolve:ssm:/agent/auth/google_client_id}}'
+        client_secret: '{{resolve:ssm-secure:/agent/auth/google_client_secret}}'
+      AttributeMapping:
+        email: email
+        name: name
+        picture: picture
+
+  AuthUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: GoogleIdentityProvider
+    Properties:
+      UserPoolId: !Ref AuthUserPool
+      ClientName: MeridianAgentWebClient
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      CallbackURLs:
+        - http://localhost:3000/auth/callback
+        - !Sub '{{resolve:ssm:/agent/frontend_base_url}}/auth/callback'
+      LogoutURLs:
+        - http://localhost:3000/
+        - !Sub '{{resolve:ssm:/agent/frontend_base_url}}/'
+      SupportedIdentityProviders:
+        - Google
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: minutes
+        IdToken: minutes
+
+  AuthUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref HostedUiDomainPrefix
+      ManagedLoginVersion: 2
+      UserPoolId: !Ref AuthUserPool
+
+Outputs:
+  UserPoolId:
+    Value: !Ref AuthUserPool
+  UserPoolClientId:
+    Value: !Ref AuthUserPoolClient
+  HostedUiBaseUrl:
+    Value: !Sub 'https://${AuthUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+  JwtIssuer:
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${AuthUserPool}'

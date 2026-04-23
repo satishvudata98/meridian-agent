@@ -47,7 +47,7 @@ Resources:
       EngineVersion: '16.3'
       MasterUsername: agentadmin
       # Security best practice: pulling password from Parameter Store at deploy time
-      MasterUserPassword: '{{resolve:ssm:/agent/db_password}}'
+      MasterUserPassword: '{{resolve:ssm-secure:/agent/db_password}}'
       PubliclyAccessible: false
       DBSubnetGroupName: !Ref AgentDBSubnetGroup
       VPCSecurityGroups:

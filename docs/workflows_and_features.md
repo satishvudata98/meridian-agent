@@ -1,22 +1,24 @@
 # Workflows And Features
 
-Last updated: 2026-04-22
+Last updated: 2026-04-23
 
 This document tracks the application features that are present in the current codebase and how data moves through them.
+
+The current user flow is private by default: the frontend is gated by Cognito Hosted UI through the auth shell, and the HTTP API expects Cognito-backed authentication.
 
 ## 1. Implemented Feature Inventory
 
 ### 1.1 Topic Tracking And Run Creation
 
-The dashboard lets a user enter a research topic and submit it. The frontend calls `NEXT_PUBLIC_TRIGGER_URL`, which is expected to be the `AgentTriggerFunction` Lambda Function URL. The Lambda validates `topic_name`, generates a `run-{uuid}` identifier, queues the run in SQS, and returns `{ "run_id": "...", "status": "queued" }`.
+The dashboard lets a user enter a research topic and submit it. The frontend calls the authenticated HTTP API using `NEXT_PUBLIC_API_BASE_URL`, specifically `POST /runs`. The Lambda validates `topic_name`, derives the authenticated owner from JWT claims, generates a `run-{uuid}` identifier, queues the run in SQS, and returns `{ "run_id": "...", "status": "queued" }`.
 
 ### 1.2 Latest Insights Dashboard
 
-The home page fetches `NEXT_PUBLIC_GET_DIGESTS_URL` on load. It displays completed research digests and active HITL pauses in one sorted list. Completed digests show confidence and link to the full report. Paused runs show an "Awaiting Guidance" badge and link to the run trace.
+The home page fetches the authenticated `GET /digests` API through `NEXT_PUBLIC_API_BASE_URL` on load. The response is currently a mixed list that may include completed research digests and active HITL pauses. Completed digests show confidence and link to the full report. Paused runs show an "Awaiting Guidance" badge and link to the run trace when a summary is available.
 
 ### 1.3 Live Runtime Trace
 
-The `/runs/[run_id]` page opens a WebSocket connection to `NEXT_PUBLIC_WS_URL?runId=<run_id>`. `WebSocketManagerFunction` stores the connection in DynamoDB. The orchestrator looks up connections by `run_id` and pushes events for thinking, tool use, HITL pause, and completion.
+The `/runs/[run_id]` page first requests a short-lived stream ticket from `POST /runs/{run_id}/stream-ticket`, then opens a WebSocket connection to `NEXT_PUBLIC_WS_URL?runId=<run_id>&runAccessToken=<ticket>`. `WebSocketManagerFunction` stores the connection in DynamoDB. The orchestrator looks up connections by `run_id` and pushes events for thinking, tool use, HITL pause, and completion.
 
 ### 1.4 Plan-First Agent Reasoning
 
@@ -39,7 +41,7 @@ The first `create_digest` attempt during the research phase is intercepted. The 
 
 ### 1.7 Human-In-The-Loop Guidance
 
-If the agent needs a human decision, `ask_human_guidance` saves the run state to `AgentPausedState`, including the current phase and pending tool-call ID, broadcasts an awaiting-input event, and exits the Lambda cleanly. The run page can show the pause from either a live WebSocket event or persisted paused state returned by the digests API. The user submits an answer through `HITLResumeFunction`, which loads the saved state and requeues the run as `hitl_resume`.
+If the agent needs a human decision, `ask_human_guidance` saves the run state to `AgentPausedState`, including the current phase and pending tool-call ID, broadcasts an awaiting-input event, and exits the Lambda cleanly. The run page can show the pause from either a live WebSocket event or persisted paused state returned by the authenticated digests API. The user submits an answer through the authenticated `POST /runs/{run_id}/resume` flow, which loads the saved state and requeues the run as `hitl_resume`.
 
 ### 1.8 HITL Timeout Auto-Resume
 
@@ -47,7 +49,7 @@ If the agent needs a human decision, `ask_human_guidance` saves the run state to
 
 ### 1.9 Full Digest Rendering
 
-The `/digests/[digest_id]` route fetches the digest list, selects the requested digest, and renders:
+The `/digests/[digest_id]` route currently fetches the authenticated digest list, selects the requested digest client-side, and renders:
 
 - topic title
 - confidence score
@@ -65,10 +67,10 @@ Important: the metric publishing helper exists, but the orchestrator does not cu
 ## 2. Fresh Run Workflow
 
 1. User submits a topic on `/`.
-2. Frontend posts `{ "topic_name": "..." }` to the trigger Function URL.
+2. Frontend posts `{ "topic_name": "..." }` to the authenticated `POST /runs` endpoint.
 3. Trigger Lambda returns a `run_id` and sends the job to SQS.
 4. Frontend navigates to `/runs/[run_id]`.
-5. The run page connects to WebSocket with the run ID.
+5. The run page requests a short-lived stream ticket and then connects to WebSocket with the run ID and ticket.
 6. SQS invokes the orchestrator Lambda.
 7. Orchestrator initializes the LLM provider, optional MemoryStore, ToolExecutor, and X-Ray annotations.
 8. The model calls `create_research_plan`.
@@ -83,9 +85,9 @@ Important: the metric publishing helper exists, but the orchestrator does not cu
 1. The model calls `ask_human_guidance` with a question and context.
 2. The tool stores `run_id`, `topic_name`, `phase`, `pending_tool_use_id`, question, context, status, expiry times, TTL, and serialized messages in `AgentPausedState`.
 3. A WebSocket `awaiting_human_input` event is emitted.
-4. The frontend displays the HITL answer card on `/runs/[run_id]`. If the user returns later, the page fetches persisted paused state through `NEXT_PUBLIC_GET_DIGESTS_URL`.
+4. The frontend displays the HITL answer card on `/runs/[run_id]`. If the user returns later, the page fetches persisted paused state through the authenticated `GET /digests` response.
 5. The dashboard also includes the paused run in latest insights.
-6. The user posts an answer through `NEXT_PUBLIC_HITL_RESUME_URL`.
+6. The user posts an answer through the authenticated `POST /runs/{run_id}/resume` endpoint.
 7. `HITLResumeFunction` marks the paused run as resumed and queues a `hitl_resume` message with the saved phase and pending tool-call ID.
 8. The orchestrator restores the message history, appends the human answer as the matching `tool_result`, restores the phase, and continues.
 9. If the user never answers, the timeout Lambda auto-resumes the run after the response window expires.
@@ -114,20 +116,27 @@ When `DB_HOST` is configured, the orchestrator creates a `MemoryStore`, connects
 
 The dashboard expects these public environment variables:
 
-- `NEXT_PUBLIC_TRIGGER_URL`: trigger Lambda Function URL.
-- `NEXT_PUBLIC_GET_DIGESTS_URL`: get-digests Lambda Function URL.
+- `NEXT_PUBLIC_API_BASE_URL`: authenticated HTTP API base URL.
 - `NEXT_PUBLIC_WS_URL`: WebSocket API Gateway URL ending in `/prod`.
-- `NEXT_PUBLIC_HITL_RESUME_URL`: HITL resume Lambda Function URL.
+- `NEXT_PUBLIC_COGNITO_DOMAIN`: Cognito Hosted UI base URL.
+- `NEXT_PUBLIC_COGNITO_CLIENT_ID`: Cognito app client ID.
+- `NEXT_PUBLIC_COGNITO_REDIRECT_URI`: frontend callback URL.
+- `NEXT_PUBLIC_COGNITO_LOGOUT_URI`: frontend logout URL.
+- `NEXT_PUBLIC_COGNITO_SCOPES`: usually `openid email profile`.
 
-For deployed frontend hosts such as Vercel, `NEXT_PUBLIC_*` values are baked into the client bundle at build time. If `NEXT_PUBLIC_HITL_RESUME_URL` is added or changed, redeploy the frontend before testing guidance submission.
+For deployed frontend hosts such as Vercel, `NEXT_PUBLIC_*` values are baked into the client bundle at build time. If any of them change, redeploy the frontend.
 
 ## 7. Feature Status Notes
 
+- Frontend access is gated by Cognito Hosted UI.
+- The HTTP API is the current frontend entry point for run creation, digest reads, resume actions, and stream-ticket issuance.
+- Live run traces use short-lived stream tickets instead of direct anonymous WebSocket access.
 - Real-time run traces are implemented as operational event streaming.
 - HITL state save, manual resume, and timeout resume are implemented with valid tool-result reconstruction for OpenAI-style tool calls.
 - Plan-first and critic-gated writing are implemented.
 - Vector memory is implemented when PostgreSQL and pgvector are reachable.
 - Code execution is implemented with basic controls.
+- Digest detail and paused-state detail still rely on client-side filtering from the mixed `/digests` response rather than dedicated resource endpoints.
 - URL summarization and S3 raw document archiving remain placeholders.
 - Redis rate limiting is implemented as a class but not yet attached to Tavily calls.
 - CloudWatch metrics publishing is implemented as a helper but not yet called by the orchestrator.

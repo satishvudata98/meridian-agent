@@ -2,16 +2,21 @@ import json
 import os
 import uuid
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 import boto3
 import subprocess
 from tavily import TavilyClient
+from botocore.config import Config
+
+
+aws_config = Config(connect_timeout=3, read_timeout=5, retries={'max_attempts': 2})
 
 
 class ToolExecutor:
-    def __init__(self, llm_client=None, memory_store=None, run_id=None, messages_ref=None, topic_name=None):
+    def __init__(self, llm_client=None, memory_store=None, run_id=None, messages_ref=None, topic_name=None, user_id=None):
         self.run_id = run_id
         self.topic_name = topic_name
+        self.user_id = user_id
         self.messages_ref = messages_ref  # Live reference to the conversation history for HITL state saving
         # Initializing the tool dependencies
         # Note: TAVILY_API_KEY must be accessible in system env params for lambda
@@ -24,7 +29,7 @@ class ToolExecutor:
         self.memory = memory_store
         
         # Initialize DynamoDB Client
-        self.dynamodb = boto3.resource('dynamodb')
+        self.dynamodb = boto3.resource('dynamodb', config=aws_config)
         self.digests_table_name = os.environ.get('DIGESTS_TABLE', 'ResearchDigests')
 
     def execute(self, tool_name, tool_input):
@@ -102,12 +107,13 @@ class ToolExecutor:
         confidence = args.get('confidence_score', 90)
         
         digest_id = f"digest-{uuid.uuid4().hex[:8]}"
-        created_at = datetime.utcnow().isoformat()
+        created_at = datetime.now(timezone.utc).isoformat()
         
         try:
             table = self.dynamodb.Table(self.digests_table_name)
             table.put_item(Item={
                 'digest_id': digest_id,
+            'user_id': self.user_id or 'anonymous',
                 'run_id': self.run_id or 'unknown',
                 'topic_id': topic_id,
                 'executive_summary': executive_summary,
@@ -193,21 +199,29 @@ class ToolExecutor:
         try:
             dynamodb = boto3.resource('dynamodb')
             table = dynamodb.Table(hitl_table)
-            table.put_item(Item={
+            table.put_item(
+                Item={
                 "run_id": self.run_id or "unknown",
+                "user_id": self.user_id or "anonymous",
                 "topic_name": self.topic_name or "Unknown",
                 "phase": phase,
                 "pending_tool_use_id": pending_tool_use_id or "",
                 "question": question,
                 "context": context,
                 "status": "awaiting_input",
-                "created_at": __import__("datetime").datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
                 "expires_at": expires_at,
                 "ttl": ttl,
                 # Save full conversation history so the agent can resume exactly where it stopped
                 "messages": json.dumps(self.messages_ref or [])
-            })
+                },
+                ConditionExpression='attribute_not_exists(run_id) OR #status <> :awaiting_input',
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={':awaiting_input': 'awaiting_input'}
+            )
             print(f"HITL state saved for run {self.run_id}. Question: {question[:80]}...")
+        except table.meta.client.exceptions.ConditionalCheckFailedException:
+            print(f"HITL state for run {self.run_id} is already awaiting input. Reusing the existing pause record.")
         except Exception as e:
             print(f"WARNING: Failed to save HITL state: {e}")
             return f"ERROR: Could not save pause state. Proceed autonomously. ({e})"

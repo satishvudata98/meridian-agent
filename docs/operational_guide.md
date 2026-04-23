@@ -1,8 +1,10 @@
 # Operational Guide And Best Practices
 
-Last updated: 2026-04-22
+Last updated: 2026-04-23
 
 This guide covers setup, deployment, runtime checks, and operational risks for the current Meridian Agent app.
+
+For the exact zero-to-deploy order, use [deployment_setup_guide.md](./deployment_setup_guide.md). This file focuses on runtime operations and troubleshooting after the current auth-based architecture is in place.
 
 ## 1. Required Configuration
 
@@ -22,34 +24,41 @@ The SAM templates resolve these parameters during deployment:
 
 - `TAVILY_API_KEY`
 - `OPENAI_API_KEY`
+- `/agent/run_access_secret`
 - `/agent/db_password`
-- `WS_API_ENDPOINT`
+- `/agent/auth/google_client_id`
+- `/agent/auth/google_client_secret`
+- `/agent/frontend_base_url`
 
-`WS_API_ENDPOINT` should be set to the deployed WebSocket URL, for example `wss://<api-id>.execute-api.<region>.amazonaws.com/prod`.
+Sensitive values are now expected as `SecureString` where appropriate. The detailed key list and exact creation steps live in [deployment_setup_guide.md](./deployment_setup_guide.md).
 
 ### 1.3 Frontend Environment
 
 Set these variables for the Next.js app:
 
-- `NEXT_PUBLIC_TRIGGER_URL`: `AgentTriggerUrl` stack output.
-- `NEXT_PUBLIC_GET_DIGESTS_URL`: `GetDigestsUrl` stack output.
-- `NEXT_PUBLIC_WS_URL`: `WebSocketApiUrl` stack output.
-- `NEXT_PUBLIC_HITL_RESUME_URL`: `HITLResumeUrl` stack output.
+- `NEXT_PUBLIC_API_BASE_URL`: `MeridianHttpApiUrl` root stack output.
+- `NEXT_PUBLIC_WS_URL`: `MeridianWebSocketApiUrl` root stack output.
+- `NEXT_PUBLIC_COGNITO_DOMAIN`: `CognitoHostedUiBaseUrl` root stack output.
+- `NEXT_PUBLIC_COGNITO_CLIENT_ID`: `CognitoUserPoolClientId` root stack output.
+- `NEXT_PUBLIC_COGNITO_REDIRECT_URI`: your frontend URL with `/auth/callback` appended.
+- `NEXT_PUBLIC_COGNITO_LOGOUT_URI`: your frontend root URL.
+- `NEXT_PUBLIC_COGNITO_SCOPES`: usually `openid email profile`.
 
 Because these are `NEXT_PUBLIC_*` variables, rebuild and redeploy the frontend after changing them.
 
 ## 2. Deployment Checklist
 
-1. Configure AWS credentials.
-2. Create required SSM parameters.
-3. Deploy the SAM root template from `infra/template.yaml`.
-4. Copy CloudFormation outputs into frontend environment variables.
-5. Deploy or run the Next.js frontend.
-6. Submit a topic from the dashboard.
-7. Confirm the trigger Lambda returns a `run_id`.
-8. Open `/runs/[run_id]` and confirm WebSocket connection status.
-9. Wait for the orchestrator to produce a completion event or HITL pause.
-10. Confirm completed reports appear on the dashboard and open in `/digests/[digest_id]`.
+1. Reserve the final frontend URL first, typically by creating the Vercel project.
+2. Create the Google OAuth client using the future Cognito `/oauth2/idpresponse` redirect URI.
+3. Create required SSM parameters.
+4. Deploy the SAM root template from `infra/template.yaml`.
+5. Copy root stack outputs into frontend environment variables.
+6. Deploy or run the Next.js frontend.
+7. Sign in through Cognito Hosted UI.
+8. Submit a topic from the dashboard.
+9. Open `/runs/[run_id]` and confirm WebSocket connection status.
+10. Wait for the orchestrator to produce a completion event or HITL pause.
+11. Confirm completed reports appear on the dashboard and open in `/digests/[digest_id]`.
 
 ## 3. Local Frontend Development
 
@@ -61,6 +70,7 @@ npm run dev
 ```
 
 The frontend is useful locally when pointed at deployed AWS Lambda Function URLs and the deployed WebSocket API. Without those environment variables, the UI will load but cannot trigger real backend work.
+The frontend is useful locally when pointed at the deployed authenticated HTTP API, Cognito Hosted UI configuration, and deployed WebSocket API. Use [frontend/.env.example](../frontend/.env.example) as the source of truth for local `.env.local` or Vercel setup.
 
 ## 4. Runtime Operations
 
@@ -96,7 +106,7 @@ Each pause record also stores the current phase and the pending `ask_human_guida
 
 The run trace depends on three pieces:
 
-- the frontend connects to `NEXT_PUBLIC_WS_URL?runId=<run_id>`
+- the frontend requests a short-lived stream ticket from the authenticated API and then connects to `NEXT_PUBLIC_WS_URL?runId=<run_id>&runAccessToken=<ticket>`
 - `$connect` stores the mapping in `AgentConnections`
 - the orchestrator has `WS_API_ENDPOINT` and `execute-api:ManageConnections` permission
 
@@ -140,22 +150,23 @@ Until metrics are wired in, use AWS Billing, CloudWatch Logs, and provider dashb
 
 ## 5. Known Gaps And Follow-Up Work
 
-- Add auth to Function URLs and WebSocket connections before production use.
+- Remove or lock down the remaining legacy public Function URL resources in infrastructure if they are no longer needed operationally.
 - Wire `RateLimiter` into Tavily and any other external APIs.
 - Call `MetricsPublisher.publish_run_metrics()` from the orchestrator with real token, duration, cost, and tool-call data.
 - Replace `summarise_url` simulation with real fetch, parse, S3 archive, and summary logic.
-- Add dedicated API routes if moving away from Lambda Function URLs to the provisioned `HttpApi`.
+- Split the mixed `/digests` contract into dedicated endpoints such as `GET /digests/{digest_id}` and `GET /runs/{run_id}/pause`.
 - Add backend unit tests for tool execution, HITL resume, timeout behavior, and OpenAI/Bedrock response mapping.
 - Add frontend tests for dashboard, run trace, digest view, and HITL submission.
 
 ## 6. Troubleshooting Quick Reference
 
-- Topic submit fails: check `NEXT_PUBLIC_TRIGGER_URL`, trigger Lambda logs, and SQS permissions.
+- Sign-in fails before dashboard load: check `NEXT_PUBLIC_COGNITO_DOMAIN`, `NEXT_PUBLIC_COGNITO_CLIENT_ID`, `NEXT_PUBLIC_COGNITO_REDIRECT_URI`, `NEXT_PUBLIC_COGNITO_LOGOUT_URI`, and the Google OAuth redirect URI setup.
+- Topic submit fails: check `NEXT_PUBLIC_API_BASE_URL`, Cognito session state, trigger Lambda logs, and SQS permissions.
 - Run page disconnects: check `NEXT_PUBLIC_WS_URL`, WebSocket stage URL, and `$connect` logs.
 - No trace events: check `WS_API_ENDPOINT`, `AgentConnections`, and `execute-api:ManageConnections`.
-- No digests appear: check `ResearchDigests`, `NEXT_PUBLIC_GET_DIGESTS_URL`, and get-digests logs.
-- HITL submit fails: check `NEXT_PUBLIC_HITL_RESUME_URL`, paused state status, and `QUEUE_URL`.
-- Guidance page spins after clicking a paused card: confirm the frontend was rebuilt with `NEXT_PUBLIC_GET_DIGESTS_URL` and `NEXT_PUBLIC_HITL_RESUME_URL`.
+- No digests appear: check `ResearchDigests`, `NEXT_PUBLIC_API_BASE_URL`, and get-digests logs.
+- HITL submit fails: check the authenticated `POST /runs/{run_id}/resume` flow, paused state status, and `QUEUE_URL`.
+- Guidance page spins after clicking a paused card: confirm the frontend was rebuilt with the current Cognito and API environment variables.
 - Memory unavailable: check RDS endpoint, VPC security groups, pgvector, and DB credentials.
 - Search fails: check `TAVILY_API_KEY` and Lambda internet egress through NAT.
 - Model calls fail: check `LLM_PROVIDER`, provider API key, Bedrock access, and CloudWatch logs.

@@ -2,7 +2,15 @@ import json
 import os
 import time
 import boto3
-from boto3.dynamodb.conditions import Key, Attr
+import uuid
+from datetime import datetime, timezone
+from boto3.dynamodb.conditions import Key
+from botocore.config import Config
+
+
+aws_config = Config(connect_timeout=3, read_timeout=5, retries={'max_attempts': 2})
+dynamodb = boto3.resource('dynamodb', config=aws_config)
+sqs = boto3.client('sqs', config=aws_config)
 
 def lambda_handler(event, context):
     """
@@ -10,9 +18,6 @@ def lambda_handler(event, context):
     Finds all HITL paused runs whose 2-hour response window has expired
     and auto-resumes them with a best-guess instruction.
     """
-    dynamodb = boto3.resource('dynamodb')
-    sqs = boto3.client('sqs')
-
     hitl_table_name = os.environ.get('HITL_TABLE', 'AgentPausedState')
     queue_url = os.environ.get('QUEUE_URL')
     now = int(time.time())
@@ -30,14 +35,28 @@ def lambda_handler(event, context):
 
     for item in stale_items:
         run_id = item['run_id']
+        timeout_request_id = f"timeout-{uuid.uuid4().hex}"
+        timeout_requested_at = datetime.now(timezone.utc).isoformat()
         try:
-            # Mark as timed_out to prevent double-processing
-            table.update_item(
+            update_response = table.update_item(
                 Key={'run_id': run_id},
-                UpdateExpression='SET #s = :s',
-                ExpressionAttributeNames={'#s': 'status'},
-                ExpressionAttributeValues={':s': 'timed_out'}
+                ConditionExpression='#status = :awaiting_input AND expires_at = :expires_at',
+                UpdateExpression=(
+                    'SET #status = :timed_out, '
+                    'timeout_request_id = :timeout_request_id, '
+                    'timeout_requested_at = :timeout_requested_at'
+                ),
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={
+                    ':awaiting_input': 'awaiting_input',
+                    ':expires_at': item.get('expires_at'),
+                    ':timed_out': 'timed_out',
+                    ':timeout_request_id': timeout_request_id,
+                    ':timeout_requested_at': timeout_requested_at,
+                },
+                ReturnValues='ALL_NEW'
             )
+            updated_item = update_response.get('Attributes', {})
 
             # Re-trigger the Orchestrator with a timeout message
             timeout_answer = (
@@ -50,14 +69,19 @@ def lambda_handler(event, context):
                 MessageBody=json.dumps({
                     "type": "hitl_resume",
                     "run_id": run_id,
-                    "topic_name": item.get('topic_name', 'Unknown'),
+                    "user_id": updated_item.get('user_id'),
+                    "timeout_request_id": timeout_request_id,
+                    "topic_name": updated_item.get('topic_name', 'Unknown'),
                     "human_answer": timeout_answer,
-                    "phase": item.get('phase', 'researching'),
-                    "pending_tool_use_id": item.get('pending_tool_use_id', ''),
-                    "messages": item.get('messages', '[]')
+                    "phase": updated_item.get('phase', 'researching'),
+                    "pending_tool_use_id": updated_item.get('pending_tool_use_id', ''),
+                    "messages": updated_item.get('messages', '[]')
                 })
             )
             print(f"HITLTimeout: Auto-resumed run {run_id}.")
+
+        except table.meta.client.exceptions.ConditionalCheckFailedException:
+            print(f"HITLTimeout: Run {run_id} was already updated by another worker. Skipping.")
 
         except Exception as e:
             print(f"HITLTimeout: Failed to auto-resume run {run_id}: {e}")

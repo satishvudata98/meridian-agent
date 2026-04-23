@@ -1,5 +1,9 @@
 # 🚀 Autonomous AI Research Agent — Setup & Deployment Guide
 
+> Current deployment guide: use [docs/deployment_setup_guide.md](docs/deployment_setup_guide.md).
+>
+> The rest of this README still contains older setup notes from the pre-auth Function URL flow and is not the source of truth for the current Cognito + HTTP API deployment.
+
 This project is a **serverless AI research agent** built with AWS (Lambda, API Gateway, SQS, RDS, Bedrock) and a Next.js frontend.
 
 Follow the steps below to deploy and run the system locally.

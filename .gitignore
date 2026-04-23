@@ -4,6 +4,7 @@ node_modules/
 out/
 build/
 .env*.local
+.env*.example
 
 # Python
 __pycache__/
