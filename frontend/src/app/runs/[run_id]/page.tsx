@@ -7,6 +7,9 @@ import { CpuIcon, Loader2Icon, ArrowLeftIcon, MessageSquareIcon, SendIcon } from
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createStreamTicket, listDigests, resumeRun } from "@/lib/apiClient";
 
 type PausedRun = {
@@ -30,32 +33,32 @@ type StreamTicketState = {
 function getLogPresentation(log: LogEntry) {
   if (log.status === "tool_use") {
     return {
-      badgeClassName: "text-indigo-400 font-semibold",
-      badgeLabel: `[λ ${log.tool}]`,
-      messageClassName: "text-indigo-200",
+      badgeClassName: "border border-sky-400/20 bg-sky-500/10 text-sky-100",
+      badgeLabel: log.tool ? `Tool · ${log.tool}` : "Tool call",
+      messageClassName: "text-sky-50",
     };
   }
 
   if (log.status === "completed") {
     return {
-      badgeClassName: "text-emerald-400 font-bold",
-      badgeLabel: "[done]",
-      messageClassName: "text-emerald-300 font-medium",
+      badgeClassName: "border border-emerald-500/20 bg-emerald-500/10 text-emerald-100",
+      badgeLabel: "Completed",
+      messageClassName: "text-emerald-100 font-medium",
     };
   }
 
   if (log.status === "awaiting_human_input") {
     return {
-      badgeClassName: "text-amber-400 font-bold",
-      badgeLabel: "[⏸ paused]",
-      messageClassName: "text-amber-300",
+      badgeClassName: "border border-amber-500/20 bg-amber-500/10 text-amber-100",
+      badgeLabel: "Awaiting input",
+      messageClassName: "text-amber-100",
     };
   }
 
   return {
-    badgeClassName: "text-neutral-200",
-    badgeLabel: "[agent]",
-    messageClassName: "text-emerald-300",
+    badgeClassName: "border border-white/10 bg-white/5 text-neutral-100",
+    badgeLabel: "Agent",
+    messageClassName: "text-neutral-100",
   };
 }
 
@@ -68,11 +71,17 @@ function RunLogLine({ log }: Readonly<{ log: LogEntry }>) {
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: 0.1 }}
-      className="flex items-start gap-4 p-2 hover:bg-white/5 rounded-md transition-colors"
+      className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-start gap-3 rounded-2xl border border-white/6 bg-white/[0.03] px-3 py-3 transition-colors hover:bg-white/[0.05] sm:px-4"
     >
-      <span className="text-neutral-500 shrink-0 select-none">[{log.step}]</span>
-      <span className={presentation.badgeClassName}>{presentation.badgeLabel}</span>
-      <span className={presentation.messageClassName}>{log.message || log.status}</span>
+      <span className="select-none rounded-full border border-white/8 bg-black/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+        {`step ${log.step}`}
+      </span>
+      <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${presentation.badgeClassName}`}>
+        {presentation.badgeLabel}
+      </span>
+      <span className={`min-w-0 break-words text-sm leading-6 ${presentation.messageClassName}`}>
+        {log.message || log.status}
+      </span>
     </motion.div>
   );
 }
@@ -163,124 +172,171 @@ export default function RunViewer() {
   };
 
   return (
-    <main className="min-h-screen bg-neutral-950 p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.14),transparent_28%),radial-gradient(circle_at_82%_18%,rgba(34,197,94,0.08),transparent_20%),linear-gradient(180deg,#030712_0%,#081121_44%,#030712_100%)] px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
+      <div className="mx-auto max-w-6xl space-y-6 lg:space-y-8">
         <Link href="/">
-          <Button variant="ghost" className="text-neutral-400 hover:text-white px-0 hover:bg-transparent -ml-2 group">
-            <ArrowLeftIcon className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back to Dashboard
+          <Button variant="ghost" className="-ml-2 px-2 text-neutral-400 hover:bg-transparent hover:text-white group">
+            <ArrowLeftIcon className="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-1" /> Back to Dashboard
           </Button>
         </Link>
-        
-        <header className="flex justify-between items-end border-b border-white/10 pb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-              <CpuIcon className="w-6 h-6 text-indigo-400" />
-              Runtime Trace: <span className="text-indigo-400 font-mono text-lg mt-1">{runId}</span>
-            </h1>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-neutral-400">
-             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-rose-500'}`} /> 
-             {isConnected ? "Live Connection" : "Disconnected"}
+
+        <header className="rounded-[2rem] border border-white/10 bg-neutral-950/65 p-5 shadow-[0_24px_120px_rgba(2,6,23,0.45)] backdrop-blur-2xl sm:p-6 lg:p-8">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="space-y-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/20 bg-sky-500/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-sky-100">
+                <CpuIcon className="h-4 w-4" /> Live runtime trace
+              </div>
+              <div className="space-y-3">
+                <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Agent run viewer</h1>
+                <p className="max-w-2xl text-sm leading-7 text-neutral-300 sm:text-base">
+                  Follow the agent in real time, review pauses that require operator input, and keep the live trace readable even under dense output.
+                </p>
+              </div>
+              <div className="max-w-3xl rounded-[1.35rem] border border-white/10 bg-black/30 px-4 py-3 font-mono text-sm leading-6 break-all text-sky-100 sm:px-5">
+                {runId}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 lg:items-end">
+              <Badge
+                variant="secondary"
+                className={isConnected
+                  ? "h-auto rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-emerald-100"
+                  : "h-auto rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-rose-100"
+                }
+              >
+                {isConnected ? "Live connection" : "Waiting on stream"}
+              </Badge>
+              <p className="max-w-sm text-sm leading-6 text-neutral-400 lg:text-right">
+                {isConnected ? "Trace events are flowing from the run stream." : "The run remains visible even while the websocket reconnects or a stream ticket is pending."}
+              </p>
+            </div>
           </div>
         </header>
 
         {!runAccessToken && (
-          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <div className="rounded-[1.6rem] border border-rose-500/20 bg-rose-500/10 px-4 py-4 text-sm leading-6 text-rose-100 shadow-[0_20px_60px_rgba(127,29,29,0.18)]">
             {streamTicketError || "Live trace access is unavailable until a short-lived stream ticket is issued for this run."}
           </div>
         )}
 
-        {/* HITL Question Card — only shown when agent is paused */}
         {isAwaitingHumanInput && (
           <motion.div
             initial={{ opacity: 0, y: -10, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="p-6 bg-amber-500/10 border border-amber-500/30 rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.1)] space-y-4"
+            className="rounded-[1.8rem] border border-amber-500/20 bg-amber-500/10 p-5 shadow-[0_20px_80px_rgba(245,158,11,0.12)] backdrop-blur-xl sm:p-6"
           >
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-500/20">
-                <MessageSquareIcon className="w-5 h-5 text-amber-400" />
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="rounded-2xl bg-amber-500/15 p-3">
+                  <MessageSquareIcon className="h-5 w-5 text-amber-300" />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <h3 className="text-base font-semibold text-amber-50 sm:text-lg">Agent needs your guidance</h3>
+                  <p className="text-sm leading-6 text-amber-100/70">The run is paused and waiting for a human decision before it can continue.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-amber-300 font-bold text-base">Agent needs your guidance</h3>
-                <p className="text-amber-400/60 text-xs">The agent paused and is waiting for your input to continue</p>
-              </div>
+              <Badge className="h-auto rounded-2xl border border-amber-500/20 bg-amber-500/15 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-amber-100">Awaiting input</Badge>
             </div>
-            <p className="text-amber-100/80 text-sm leading-relaxed bg-amber-500/5 rounded-xl p-4 border border-amber-500/10">
+
+            <div className="space-y-4">
+              <p className="rounded-[1.4rem] border border-amber-500/10 bg-amber-500/5 p-4 text-sm leading-7 break-words text-amber-50/85 sm:p-5">
               {hitlQuestion}
-            </p>
-            {pausedRun?.context && (
-              <p className="text-amber-100/60 text-xs leading-relaxed">
-                {pausedRun.context}
               </p>
-            )}
-            <div className="flex gap-3">
-              <input
-                id="hitl-answer-input"
-                type="text"
-                value={hitlAnswer}
-                onChange={e => setHitlAnswer(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSubmitAnswer()}
-                placeholder="Type your guidance here..."
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-neutral-500 focus:outline-none focus:border-amber-500/50 transition-colors"
-              />
-              <Button
-                id="hitl-submit-button"
-                onClick={handleSubmitAnswer}
-                disabled={hitlSubmitting || !hitlAnswer.trim()}
-                className="bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded-xl px-5 flex items-center gap-2 disabled:opacity-50"
-              >
-                {hitlSubmitting ? <Loader2Icon className="animate-spin w-4 h-4" /> : <SendIcon className="w-4 h-4" />}
-                {hitlSubmitting ? "Sending..." : "Send"}
-              </Button>
+              {pausedRun?.context && (
+                <p className="text-xs leading-6 break-words text-amber-100/65">{pausedRun.context}</p>
+              )}
+
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                <Input
+                  id="hitl-answer-input"
+                  type="text"
+                  value={hitlAnswer}
+                  onChange={(e) => setHitlAnswer(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSubmitAnswer()}
+                  placeholder="Type your guidance here..."
+                  className="h-12 rounded-2xl border-white/10 bg-black/20 px-4 text-white placeholder:text-neutral-500"
+                />
+                <Button
+                  id="hitl-submit-button"
+                  onClick={handleSubmitAnswer}
+                  disabled={hitlSubmitting || !hitlAnswer.trim()}
+                  className="h-12 rounded-2xl bg-amber-400 px-5 font-semibold text-black hover:bg-amber-300 disabled:opacity-50"
+                >
+                  {hitlSubmitting ? <Loader2Icon className="mr-2 h-4 w-4 animate-spin" /> : <SendIcon className="mr-2 h-4 w-4" />}
+                  {hitlSubmitting ? "Sending..." : "Send guidance"}
+                </Button>
+              </div>
             </div>
+
             {hitlError && (
-              <p className="text-rose-300 text-sm">{hitlError}</p>
+              <p className="text-sm text-rose-200">{hitlError}</p>
             )}
           </motion.div>
         )}
 
-        {/* HITL Submitted confirmation */}
         {hitlSubmitted && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-300 text-sm text-center"
+            className="rounded-[1.4rem] border border-emerald-500/20 bg-emerald-500/10 px-4 py-4 text-center text-sm text-emerald-100 shadow-[0_20px_80px_rgba(16,185,129,0.12)]"
           >
             Answer submitted! The agent is resuming research... check back in a moment.
           </motion.div>
         )}
 
-        <div className="bg-black/80 rounded-2xl border border-white/10 shadow-xl overflow-hidden font-mono text-sm relative">
-          <div className="absolute top-0 left-0 right-0 h-8 bg-neutral-900 border-b border-white/10 flex items-center px-4 gap-2">
-             <div className="w-3 h-3 rounded-full bg-rose-500/80" />
-             <div className="w-3 h-3 rounded-full bg-amber-500/80" />
-             <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
-             <div className="ml-4 text-xs font-sans text-neutral-600">agent-tty0 - SSH</div>
-          </div>
-          <div className="p-6 pt-12 min-h-[400px] flex flex-col gap-4">
-            {logs.map((log) => <RunLogLine key={log.entryId} log={log} />)}
-            {!isCompleted && !isAwaitingHumanInput && (
-              <div className="text-neutral-500 animate-pulse flex items-center gap-2 mt-4 ml-2">
-                  <Loader2Icon className="animate-spin w-4 h-4"/> Awaiting lambda pulse...
+        <Card className="rounded-[2rem] border border-white/10 bg-black/55 py-0 shadow-[0_24px_120px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+          <CardHeader className="gap-3 border-b border-white/10 px-5 py-4 sm:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-lg text-white sm:text-xl">Agent trace console</CardTitle>
+                <CardDescription className="mt-1 text-sm leading-6 text-neutral-400">
+                  Structured event output with safer wrapping for long tool names, messages, and run metadata.
+                </CardDescription>
               </div>
-            )}
-            {isCompleted && (
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }} 
-                animate={{ opacity: 1, y: 0 }} 
-                className="mt-8 p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex flex-col items-center gap-4 text-center"
-              >
-                <h3 className="text-xl font-bold text-emerald-400">Run Completed Successfully!</h3>
-                <p className="text-emerald-200/70 text-sm">The agent has finished compiling the research digest.</p>
-                <Link href="/">
-                  <Button className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] px-8 rounded-full mt-2">
-                    Read Generated Digest
-                  </Button>
-                </Link>
-              </motion.div>
-            )}
-          </div>
-        </div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-neutral-500">
+                <span className="h-3 w-3 rounded-full bg-rose-500/80" />
+                <span className="h-3 w-3 rounded-full bg-amber-500/80" />
+                <span className="h-3 w-3 rounded-full bg-emerald-500/80" />
+                <span className="ml-2">agent-tty0</span>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="px-0 pb-0 pt-0 font-mono text-sm">
+            <div className="max-h-[65vh] min-h-[22rem] overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+              <div className="flex flex-col gap-3">
+                {logs.map((log) => <RunLogLine key={log.entryId} log={log} />)}
+                {logs.length === 0 && !streamTicketError && (
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm leading-6 text-neutral-500">
+                    Waiting for the first trace events from this run.
+                  </div>
+                )}
+                {!isCompleted && !isAwaitingHumanInput && (
+                  <div className="flex items-center gap-2 px-2 pt-2 text-neutral-500 animate-pulse">
+                    <Loader2Icon className="h-4 w-4 animate-spin" /> Awaiting lambda pulse...
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {isCompleted && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-[1.8rem] border border-emerald-500/20 bg-emerald-500/10 p-6 text-center shadow-[0_24px_80px_rgba(16,185,129,0.1)]"
+          >
+            <h3 className="text-xl font-semibold text-emerald-100">Run completed successfully</h3>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-emerald-100/75">
+              The agent has finished compiling the research digest. Return to the dashboard to open the latest report.
+            </p>
+            <Link href="/">
+              <Button className="mt-5 h-11 rounded-2xl bg-emerald-400 px-6 text-slate-950 hover:bg-emerald-300">
+                Open dashboard
+              </Button>
+            </Link>
+          </motion.div>
+        )}
       </div>
     </main>
   );

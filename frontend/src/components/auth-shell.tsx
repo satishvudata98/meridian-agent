@@ -146,15 +146,31 @@ export default function AuthShell({ children }: Readonly<{ children: ReactNode }
   }
 
   return (
-    <div className="min-h-full">
-      <div className="fixed right-4 top-4 z-50 flex items-center gap-3 rounded-2xl border border-white/10 bg-neutral-900/80 px-4 py-3 shadow-2xl backdrop-blur-xl">
-        <div className="hidden text-right sm:block">
-          <div className="text-sm font-medium text-white">{session.user.name || session.user.email || "Signed in"}</div>
-          {session.user.email && <div className="text-xs text-neutral-400">{session.user.email}</div>}
+    <div className="min-h-full bg-neutral-950 text-neutral-50">
+      <div className="sticky top-0 z-50 border-b border-white/10 bg-neutral-950/80 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-10">
+          <div className="min-w-0 flex items-center gap-3">
+            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl border border-sky-400/20 bg-sky-500/10 text-sky-200 shadow-[0_0_24px_rgba(56,189,248,0.16)]">
+              <ShieldCheckIcon className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] font-medium uppercase tracking-[0.24em] text-neutral-500">Private Meridian workspace</div>
+              <div className="truncate text-sm font-medium text-white sm:text-base">
+                {session.user.name || session.user.email || "Signed in"}
+              </div>
+              {session.user.email && (
+                <div className="max-w-[min(80vw,28rem)] truncate text-xs text-neutral-400">{session.user.email}</div>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            className="h-11 rounded-2xl border-white/10 bg-white/5 px-4 text-neutral-100 hover:bg-white/10"
+            onClick={signOutFromHostedUi}
+          >
+            <LogOutIcon className="mr-2 h-4 w-4" /> Sign out
+          </Button>
         </div>
-        <Button variant="outline" className="border-white/10 bg-transparent text-neutral-200 hover:bg-neutral-800" onClick={signOutFromHostedUi}>
-          <LogOutIcon className="mr-2 h-4 w-4" /> Sign out
-        </Button>
       </div>
       {children}
     </div>
