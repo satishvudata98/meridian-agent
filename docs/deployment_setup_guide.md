@@ -232,12 +232,12 @@ Create every key below before running `sam deploy`.
 
 | Name | Type | Required for deploy | Example value | Where the value comes from |
 | --- | --- | --- | --- | --- |
-| `OPENAI_API_KEY` | `SecureString` | Yes | `sk-...` | OpenAI dashboard |
-| `TAVILY_API_KEY` | `SecureString` | Yes | `tvly-...` | Tavily dashboard |
-| `/agent/run_access_secret` | `SecureString` | Yes | long random secret | Generate it yourself |
-| `/agent/db_password` | `SecureString` | Yes | strong database password | Generate it yourself |
+| `OPENAI_API_KEY` | `String` | Yes | `sk-...` | OpenAI dashboard |
+| `TAVILY_API_KEY` | `String` | Yes | `tvly-...` | Tavily dashboard |
+| `/agent/run_access_secret` | `String` | Yes | long random secret | Generate it yourself |
+| `/agent/db_password` | `String` | Yes | strong database password | Generate it yourself |
 | `/agent/auth/google_client_id` | `String` | Yes | `1234567890-abc.apps.googleusercontent.com` | Google Cloud OAuth client |
-| `/agent/auth/google_client_secret` | `SecureString` | Yes | `GOCSPX-...` | Google Cloud OAuth client |
+| `/agent/auth/google_client_secret` | `String` | Yes | `GOCSPX-...` | Google Cloud OAuth client |
 | `/agent/frontend_base_url` | `String` | Yes | `https://your-project.vercel.app` | Your Vercel project URL |
 
 Do not create these old keys:
@@ -289,12 +289,12 @@ $Bytes = New-Object byte[] 24
 If you prefer the CLI, these commands write the parameters exactly as the current templates expect:
 
 ```powershell
-aws ssm put-parameter --region us-east-1 --name OPENAI_API_KEY --type SecureString --value "sk-..." --overwrite
-aws ssm put-parameter --region us-east-1 --name TAVILY_API_KEY --type SecureString --value "tvly-..." --overwrite
-aws ssm put-parameter --region us-east-1 --name /agent/run_access_secret --type SecureString --value "<generated-secret>" --overwrite
-aws ssm put-parameter --region us-east-1 --name /agent/db_password --type SecureString --value "<generated-db-password>" --overwrite
+aws ssm put-parameter --region us-east-1 --name OPENAI_API_KEY --type String --value "sk-..." --overwrite
+aws ssm put-parameter --region us-east-1 --name TAVILY_API_KEY --type String --value "tvly-..." --overwrite
+aws ssm put-parameter --region us-east-1 --name /agent/run_access_secret --type String --value "<generated-secret>" --overwrite
+aws ssm put-parameter --region us-east-1 --name /agent/db_password --type String --value "<generated-db-password>" --overwrite
 aws ssm put-parameter --region us-east-1 --name /agent/auth/google_client_id --type String --value "<google-client-id>" --overwrite
-aws ssm put-parameter --region us-east-1 --name /agent/auth/google_client_secret --type SecureString --value "<google-client-secret>" --overwrite
+aws ssm put-parameter --region us-east-1 --name /agent/auth/google_client_secret --type String --value "<google-client-secret>" --overwrite
 aws ssm put-parameter --region us-east-1 --name /agent/frontend_base_url --type String --value "https://<your-project-name>.vercel.app" --overwrite
 ```
 
@@ -349,24 +349,43 @@ Add these keys.
 | `NEXT_PUBLIC_WS_URL` | `wss://xyz789.execute-api.us-east-1.amazonaws.com/prod` | `MeridianWebSocketApiUrl` |
 | `NEXT_PUBLIC_COGNITO_DOMAIN` | `https://meridian-agent-us-east-1-123456789012.auth.us-east-1.amazoncognito.com` | `CognitoHostedUiBaseUrl` |
 | `NEXT_PUBLIC_COGNITO_CLIENT_ID` | `4l1exampleclientid` | `CognitoUserPoolClientId` |
-| `NEXT_PUBLIC_COGNITO_REDIRECT_URI` | `https://your-project.vercel.app/auth/callback` | your final frontend URL |
-| `NEXT_PUBLIC_COGNITO_LOGOUT_URI` | `https://your-project.vercel.app/` | your final frontend URL |
-| `NEXT_PUBLIC_COGNITO_SCOPES` | `openid email profile` | fixed value |
+
+These 4 keys are the hard requirements for the current frontend build.
+
+### 9.2 Optional Frontend Auth Overrides
+
+The frontend code supplies defaults for these values if you leave them unset:
+
+| Vercel env key | Default when unset | When to set it manually |
+| --- | --- | --- |
+| `NEXT_PUBLIC_COGNITO_REDIRECT_URI` | `window.location.origin + /auth/callback` | set it only if you need a non-default callback URL |
+| `NEXT_PUBLIC_COGNITO_LOGOUT_URI` | `window.location.origin + /` | set it only if you need a non-default logout return URL |
+| `NEXT_PUBLIC_COGNITO_SCOPES` | `openid email profile` | set it only if you need different OAuth scopes |
 
 Important:
 
 - These are frontend build-time variables.
+- The code hard-requires only `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_COGNITO_DOMAIN`, and `NEXT_PUBLIC_COGNITO_CLIENT_ID`.
+- `NEXT_PUBLIC_COGNITO_REDIRECT_URI`, `NEXT_PUBLIC_COGNITO_LOGOUT_URI`, and `NEXT_PUBLIC_COGNITO_SCOPES` are optional overrides.
 - If you change any `NEXT_PUBLIC_*` value later, redeploy the frontend.
 
-### 9.2 Exact Mapping From AWS Outputs To Vercel Keys
+### 9.3 Exact Mapping From AWS Outputs To Vercel Keys
+
+Required mapping:
 
 ```text
 MeridianHttpApiUrl        -> NEXT_PUBLIC_API_BASE_URL
 MeridianWebSocketApiUrl   -> NEXT_PUBLIC_WS_URL
 CognitoHostedUiBaseUrl    -> NEXT_PUBLIC_COGNITO_DOMAIN
 CognitoUserPoolClientId   -> NEXT_PUBLIC_COGNITO_CLIENT_ID
+```
+
+Optional overrides:
+
+```text
 your Vercel URL + /auth/callback -> NEXT_PUBLIC_COGNITO_REDIRECT_URI
 your Vercel URL + /              -> NEXT_PUBLIC_COGNITO_LOGOUT_URI
+openid email profile             -> NEXT_PUBLIC_COGNITO_SCOPES
 ```
 
 ## 10. Deploy The Frontend In Vercel
@@ -457,8 +476,12 @@ Check the Vercel variables:
 
 - `NEXT_PUBLIC_COGNITO_DOMAIN`
 - `NEXT_PUBLIC_COGNITO_CLIENT_ID`
+
+If you set custom overrides, also check:
+
 - `NEXT_PUBLIC_COGNITO_REDIRECT_URI`
 - `NEXT_PUBLIC_COGNITO_LOGOUT_URI`
+- `NEXT_PUBLIC_COGNITO_SCOPES`
 
 Then redeploy the frontend.
 

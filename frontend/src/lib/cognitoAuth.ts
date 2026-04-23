@@ -37,6 +37,9 @@ export type AuthSession = {
   user: CognitoIdTokenClaims;
 };
 
+let cachedAuthSessionRaw: string | null = null;
+let cachedAuthSession: AuthSession | null = null;
+
 function getStorage() {
   if (typeof window === "undefined") {
     return null;
@@ -161,11 +164,20 @@ function getStoredSessionValue() {
 export function getAuthSession() {
   const rawValue = getStoredSessionValue();
   if (!rawValue) {
+    cachedAuthSessionRaw = null;
+    cachedAuthSession = null;
     return null;
   }
 
+  if (rawValue === cachedAuthSessionRaw) {
+    return cachedAuthSession;
+  }
+
   try {
-    return JSON.parse(rawValue) as AuthSession;
+    const parsedSession = JSON.parse(rawValue) as AuthSession;
+    cachedAuthSessionRaw = rawValue;
+    cachedAuthSession = parsedSession;
+    return parsedSession;
   } catch {
     clearAuthSession();
     return null;
@@ -182,7 +194,10 @@ function storeAuthSession(session: AuthSession) {
     return;
   }
 
-  storage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+  const serializedSession = JSON.stringify(session);
+  cachedAuthSessionRaw = serializedSession;
+  cachedAuthSession = session;
+  storage.setItem(AUTH_SESSION_KEY, serializedSession);
   notifyAuthSessionChanged();
 }
 
@@ -192,6 +207,8 @@ export function clearAuthSession() {
     return;
   }
 
+  cachedAuthSessionRaw = null;
+  cachedAuthSession = null;
   storage.removeItem(AUTH_SESSION_KEY);
   notifyAuthSessionChanged();
 }
