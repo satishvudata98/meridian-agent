@@ -30,27 +30,25 @@ Resources:
     Properties:
       Location: stacks/memory.yaml
 
-  # 5. API Gateway (WebSocket & HTTP) — depends on auth for JWT authorizer scaffolding
+  # 5. API Gateway WebSocket shell for live run traces
   ApiStack:
     Type: AWS::Serverless::Application
-    DependsOn: AuthStack
     Properties:
       Location: stacks/api.yaml
-      Parameters:
-        CognitoUserPoolId: !GetAtt AuthStack.Outputs.UserPoolId
-        CognitoUserPoolClientId: !GetAtt AuthStack.Outputs.UserPoolClientId
 
-  # 6. Agent compute — depends on networking (for VPC) and memory (for DB endpoint)
+  # 6. Agent compute — owns the HTTP API and depends on networking, memory, auth, and websocket outputs
   AgentStack:
     Type: AWS::Serverless::Application
     DependsOn:
+      - AuthStack
       - NetworkStack
       - MemoryStack
       - ApiStack
     Properties:
       Location: stacks/agent.yaml
       Parameters:
-        HttpApiId: !GetAtt ApiStack.Outputs.HttpApiId
+        CognitoUserPoolId: !GetAtt AuthStack.Outputs.UserPoolId
+        CognitoUserPoolClientId: !GetAtt AuthStack.Outputs.UserPoolClientId
         WebSocketApiUrl: !GetAtt ApiStack.Outputs.WebSocketApiUrl
 
   # 7. Observability — standalone cost guardrail
@@ -69,6 +67,6 @@ Outputs:
   CognitoJwtIssuer:
     Value: !GetAtt AuthStack.Outputs.JwtIssuer
   MeridianHttpApiUrl:
-    Value: !GetAtt ApiStack.Outputs.HttpApiUrl
+    Value: !GetAtt AgentStack.Outputs.HttpApiUrl
   MeridianWebSocketApiUrl:
     Value: !GetAtt ApiStack.Outputs.WebSocketApiUrl

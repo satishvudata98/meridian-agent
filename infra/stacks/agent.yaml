@@ -3,12 +3,37 @@ Transform: AWS::Serverless-2016-10-31
 Description: AI Research Agent - Orchestrator and SQS
 
 Parameters:
-  HttpApiId:
+  CognitoUserPoolId:
+    Type: String
+  CognitoUserPoolClientId:
     Type: String
   WebSocketApiUrl:
     Type: String
 
 Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+        AllowOrigins:
+          - '*'
+      Auth:
+        DefaultAuthorizer: CognitoJwtAuthorizer
+        Authorizers:
+          CognitoJwtAuthorizer:
+            IdentitySource: '$request.header.Authorization'
+            JwtConfiguration:
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}'
+              audience:
+                - !Ref CognitoUserPoolClientId
+
   AgentRunDeadLetterQueue:
     Type: AWS::SQS::Queue
 
@@ -109,7 +134,7 @@ Resources:
         AuthenticatedRunCreate:
           Type: HttpApi
           Properties:
-            ApiId: !Ref HttpApiId
+            ApiId: !Ref HttpApi
             Path: /runs
             Method: POST
 
@@ -134,7 +159,7 @@ Resources:
         AuthenticatedStreamTicket:
           Type: HttpApi
           Properties:
-            ApiId: !Ref HttpApiId
+            ApiId: !Ref HttpApi
             Path: /runs/{run_id}/stream-ticket
             Method: POST
 
@@ -163,7 +188,7 @@ Resources:
         AuthenticatedDigestList:
           Type: HttpApi
           Properties:
-            ApiId: !Ref HttpApiId
+            ApiId: !Ref HttpApi
             Path: /digests
             Method: GET
 
@@ -206,7 +231,7 @@ Resources:
         AuthenticatedHitlResume:
           Type: HttpApi
           Properties:
-            ApiId: !Ref HttpApiId
+            ApiId: !Ref HttpApi
             Path: /runs/{run_id}/resume
             Method: POST
 
@@ -237,6 +262,10 @@ Resources:
             QueueName: !GetAtt AgentRunQueue.QueueName
 
 Outputs:
+  HttpApiUrl:
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/"
+  HttpApiId:
+    Value: !Ref HttpApi
   AgentRunQueueUrl:
     Value: !Ref AgentRunQueue
   AgentTriggerUrl:

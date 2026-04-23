@@ -2,36 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: AI Research Agent - API Gateway
 
-Parameters:
-  CognitoUserPoolId:
-    Type: String
-  CognitoUserPoolClientId:
-    Type: String
-
 Resources:
-  HttpApi:
-    Type: AWS::Serverless::HttpApi
-    Properties:
-      CorsConfiguration:
-        AllowMethods:
-          - GET
-          - POST
-          - OPTIONS
-        AllowHeaders:
-          - Authorization
-          - Content-Type
-        AllowOrigins:
-          - '*'
-      Auth:
-        DefaultAuthorizer: CognitoJwtAuthorizer
-        Authorizers:
-          CognitoJwtAuthorizer:
-            IdentitySource: '$request.header.Authorization'
-            JwtConfiguration:
-              issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}'
-              audience:
-                - !Ref CognitoUserPoolClientId
-
   # The Websocket Shell
   WebSocketApi:
     Type: AWS::ApiGatewayV2::Api
@@ -108,9 +79,5 @@ Resources:
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
 
 Outputs:
-  HttpApiUrl:
-    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/"
-  HttpApiId:
-    Value: !Ref HttpApi
   WebSocketApiUrl:
     Value: !Sub "wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
