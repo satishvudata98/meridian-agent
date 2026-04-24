@@ -18,9 +18,9 @@ import {
 function LoadingScreen() {
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-50 flex items-center justify-center p-8">
-      <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-neutral-900/70 px-6 py-4 shadow-2xl backdrop-blur-xl">
+      <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-neutral-900/70 px-5 py-3.5 shadow-2xl backdrop-blur-xl">
         <Loader2Icon className="h-5 w-5 animate-spin text-indigo-400" />
-        <span className="text-sm text-neutral-300">Checking your Meridian session…</span>
+        <span className="text-sm text-neutral-300">Opening Meridian…</span>
       </div>
     </main>
   );
@@ -47,39 +47,33 @@ function MissingConfigScreen({ missingKeys }: Readonly<{ missingKeys: string[] }
 
 function SignedOutScreen({ onSignIn, error }: Readonly<{ onSignIn: () => void; error: string | null }>) {
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.15),transparent_38%),linear-gradient(180deg,#09090b_0%,#0f172a_100%)] text-neutral-50 px-6 py-16">
-      <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
-        <section className="space-y-6">
-          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-400/20 bg-indigo-500/10 px-4 py-2 text-sm text-indigo-200">
-            <ShieldCheckIcon className="h-4 w-4" /> Cognito-protected Meridian workspace
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.15),transparent_38%),linear-gradient(180deg,#09090b_0%,#0f172a_100%)] px-5 py-10 text-neutral-50 sm:px-6 sm:py-14">
+      <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+        <section className="space-y-4">
+          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-400/20 bg-indigo-500/10 px-3 py-1.5 text-xs text-indigo-200">
+            <ShieldCheckIcon className="h-4 w-4" /> Sign in required
           </div>
-          <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Sign in with Google before you can create runs, inspect digests, or resume an agent.
+          <h1 className="max-w-3xl text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            Sign in to continue
           </h1>
-          <p className="max-w-2xl text-base leading-7 text-neutral-300 sm:text-lg">
-            This frontend uses Cognito Hosted UI with Google federation. The backend API is authenticated through Cognito JWTs and owner-scoped access checks.
+          <p className="max-w-xl text-sm leading-6 text-neutral-300 sm:text-base">
+            Use Google to access your runs and reports.
           </p>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-neutral-400">
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Google federation</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Authorization code + PKCE</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Private-by-default UX</span>
-          </div>
         </section>
 
-        <section className="rounded-[2rem] border border-white/10 bg-neutral-900/75 p-8 shadow-[0_24px_120px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-          <h2 className="text-xl font-semibold text-white">Meridian access</h2>
-          <p className="mt-3 text-sm leading-6 text-neutral-300">
-            Use Google sign-in through Cognito Hosted UI to enter the operator console. Anonymous browsing is no longer the intended production path.
+        <section className="rounded-[1.6rem] border border-white/10 bg-neutral-900/75 p-5 shadow-[0_24px_120px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-6">
+          <h2 className="text-lg font-semibold text-white">Google sign-in</h2>
+          <p className="mt-2 text-sm leading-6 text-neutral-300">
+            One click and you are in.
           </p>
           {error && (
-            <div className="mt-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
               {error}
             </div>
           )}
-          <Button onClick={onSignIn} className="mt-6 w-full rounded-xl bg-white text-neutral-950 hover:bg-neutral-100">
+          <Button onClick={onSignIn} className="mt-5 h-11 w-full rounded-xl bg-white text-neutral-950 hover:bg-neutral-100">
             <LogInIcon className="mr-2 h-4 w-4" /> Continue with Google
           </Button>
-          <p className="mt-4 text-xs leading-5 text-neutral-500">Current deployment note: both the UI and the HTTP API expect Cognito-backed configuration.</p>
         </section>
       </div>
     </main>
@@ -145,27 +139,23 @@ export default function AuthShell({ children }: Readonly<{ children: ReactNode }
     );
   }
 
+  const userLabel = session.user.name?.trim() || session.user.email?.trim() || "Account";
+
   return (
     <div className="min-h-full bg-neutral-950 text-neutral-50">
       <div className="sticky top-0 z-50 border-b border-white/10 bg-neutral-950/80 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-10">
-          <div className="min-w-0 flex items-center gap-3">
-            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl border border-sky-400/20 bg-sky-500/10 text-sky-200 shadow-[0_0_24px_rgba(56,189,248,0.16)]">
-              <ShieldCheckIcon className="h-5 w-5" />
+        <div className="mx-auto flex max-w-6xl flex-row items-center justify-between gap-3 px-4 py-2.5 sm:px-5 lg:px-8">
+          <div className="min-w-0 flex items-center gap-2.5">
+            <div className="flex h-9 w-9 flex-none items-center justify-center rounded-xl border border-sky-400/20 bg-sky-500/10 text-sky-200 shadow-[0_0_18px_rgba(56,189,248,0.14)]">
+              <ShieldCheckIcon className="h-4.5 w-4.5" />
             </div>
-            <div className="min-w-0">
-              <div className="text-[11px] font-medium uppercase tracking-[0.24em] text-neutral-500">Private Meridian workspace</div>
-              <div className="truncate text-sm font-medium text-white sm:text-base">
-                {session.user.name || session.user.email || "Signed in"}
-              </div>
-              {session.user.email && (
-                <div className="max-w-[min(80vw,28rem)] truncate text-xs text-neutral-400">{session.user.email}</div>
-              )}
+            <div className="max-w-[min(52vw,14rem)] truncate text-sm font-medium text-white sm:max-w-[18rem]">
+              {userLabel}
             </div>
           </div>
           <Button
             variant="outline"
-            className="h-11 rounded-2xl border-white/10 bg-white/5 px-4 text-neutral-100 hover:bg-white/10"
+            className="h-9 rounded-xl border-white/10 bg-white/5 px-3.5 text-neutral-100 hover:bg-white/10"
             onClick={signOutFromHostedUi}
           >
             <LogOutIcon className="mr-2 h-4 w-4" /> Sign out
