@@ -23,7 +23,7 @@ These additions make the app much more credible as an agentic AI portfolio proje
 
 ### 2.1 Research Depth
 
-`web_search` is live through Tavily, but `summarise_url` is still a simulation. The agent can find links, but it does not yet fetch, parse, archive, and deeply read source pages. This limits citation quality and makes the digest dependent on search-result snippets unless the model follows up with other available data.
+`web_search` is live through Tavily, and `summarise_url` now performs real HTML fetch, readability extraction, and grounded summarization. That closes the biggest credibility gap in the earlier prototype. The remaining weakness is ingestion depth: the system still does not archive raw pages, persist cleaned source text, chunk long documents, or evaluate retrieval quality, so research quality can still fall off on messy or very long sources.
 
 ### 2.2 Memory Quality
 
@@ -49,16 +49,13 @@ The orchestrator simulates separate personas through phases, but there are no se
 
 ### Milestone 1: Make Source Reading Real
 
-Implement `summarise_url` for real source ingestion:
+Extend `summarise_url` from fetched-page summarization into a fuller ingestion pipeline:
 
-- fetch pages with timeouts and content-type checks
-- extract readable text
 - store raw or cleaned content in S3
-- summarize with citation metadata
-- return title, author/date when available, source URL, and key claims
+- persist cleaned source text or chunks for later retrieval
 - save high-value chunks to vector memory
 
-This is the biggest quality upgrade because it turns the app from search-snippet synthesis into actual source-grounded research.
+This remains the biggest quality upgrade because it turns basic fetched-page summarization into reusable, inspectable source-grounded research.
 
 ### Milestone 2: Wire Observability And Cost Metrics
 

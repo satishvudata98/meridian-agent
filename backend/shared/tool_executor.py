@@ -1,15 +1,24 @@
 import json
 import os
+import re
 import uuid
 import sys
 from datetime import datetime, timezone
+from html import unescape
+from urllib.parse import urlparse
 import boto3
 import subprocess
+import requests
+from bs4 import BeautifulSoup
 from tavily import TavilyClient
 from botocore.config import Config
 
 
 aws_config = Config(connect_timeout=3, read_timeout=5, retries={'max_attempts': 2})
+HTTP_TIMEOUT_SECONDS = 10
+MAX_HTML_BYTES = 1_000_000
+MAX_SUMMARY_CHARS = 12_000
+SUMMARY_USER_AGENT = "MeridianAgent/0.1 (+https://meridian.local)"
 
 
 class ToolExecutor:
@@ -73,13 +82,137 @@ class ToolExecutor:
         response = self.tavily_client.search(query=query, search_depth="basic", max_results=num_results)
         return json.dumps(response.get("results", []))
 
+    def _extract_readable_document(self, html, url):
+        soup = BeautifulSoup(html, "html.parser")
+
+        for element in soup(["script", "style", "noscript", "svg", "canvas", "iframe", "header", "footer", "nav", "form"]):
+            element.decompose()
+
+        title = ""
+        if soup.title and soup.title.string:
+            title = soup.title.string.strip()
+
+        article = soup.find("article") or soup.find("main") or soup.body or soup
+        text = article.get_text("\n", strip=True)
+        text = unescape(text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(r"[ \t]{2,}", " ", text).strip()
+        text = text[:MAX_SUMMARY_CHARS]
+
+        metadata = {
+            "url": url,
+            "domain": urlparse(url).netloc,
+            "title": title or url,
+        }
+
+        description_tag = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
+        if description_tag and description_tag.get("content"):
+            metadata["description"] = description_tag["content"].strip()
+
+        author_tag = soup.find("meta", attrs={"name": "author"}) or soup.find("meta", attrs={"property": "article:author"})
+        if author_tag and author_tag.get("content"):
+            metadata["author"] = author_tag["content"].strip()
+
+        published_tag = soup.find("meta", attrs={"property": "article:published_time"}) or soup.find("meta", attrs={"name": "pubdate"})
+        if published_tag and published_tag.get("content"):
+            metadata["published_at"] = published_tag["content"].strip()
+
+        return metadata, text
+
+    def _extract_summary_text(self, response):
+        content = response.get("content", []) if isinstance(response, dict) else []
+        text_chunks = []
+        for block in content:
+            if block.get("type") == "text" and block.get("text"):
+                text_chunks.append(block["text"].strip())
+        return "\n\n".join(chunk for chunk in text_chunks if chunk).strip()
+
+    def _summarize_document(self, metadata, document_text, focus):
+        if not self.llm:
+            fallback = document_text[:1500]
+            return json.dumps({
+                "url": metadata["url"],
+                "title": metadata.get("title"),
+                "focus": focus,
+                "summary": fallback,
+                "source_metadata": metadata,
+                "grounded": False,
+                "note": "LLM client unavailable; returning extracted text excerpt instead of a generated summary."
+            })
+
+        prompt = (
+            "Read the provided webpage extract and produce a grounded research note. "
+            "Use only the provided content. If the focus is not covered, say so explicitly. "
+            "Return concise markdown with sections: Summary, Key Facts, Relevance, Gaps.\n\n"
+            f"Focus: {focus}\n"
+            f"Source title: {metadata.get('title', 'Unknown')}\n"
+            f"Source URL: {metadata['url']}\n"
+            f"Source metadata: {json.dumps(metadata, ensure_ascii=True)}\n\n"
+            "Webpage extract:\n"
+            f"{document_text}"
+        )
+
+        response = self.llm.fast_call(
+            messages=[{
+                "role": "user",
+                "content": [{"type": "text", "text": prompt}]
+            }],
+            system="You summarize fetched sources for a research agent. Stay grounded in the provided extract and avoid speculation.",
+            max_tokens=900,
+            tools=None,
+        )
+        summary_text = self._extract_summary_text(response)
+        if not summary_text:
+            raise ValueError("LLM returned no summary text for the fetched webpage.")
+
+        return json.dumps({
+            "url": metadata["url"],
+            "title": metadata.get("title"),
+            "focus": focus,
+            "summary": summary_text,
+            "source_metadata": metadata,
+            "grounded": True,
+        })
+
     def _summarise_url(self, args):
         url = args.get("url")
         focus = args.get("focus", "general")
-        # In a real deployed version, we fetch the URL using requests, extract HTML via BeautifulSoup,
-        # and then pass the text to our `llm_client.fast_call` to summarise.
-        # This acts as our foundational placeholder.
-        return f"SIMULATION: Summarized content of {url} focusing on {focus}."
+        if not url:
+            return "ERROR: url is required."
+
+        try:
+            response = requests.get(
+                url,
+                timeout=HTTP_TIMEOUT_SECONDS,
+                headers={
+                    "User-Agent": SUMMARY_USER_AGENT,
+                    "Accept": "text/html,application/xhtml+xml"
+                },
+                stream=True,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            return f"ERROR: Failed to fetch {url}. Details: {exc}"
+
+        content_type = (response.headers.get("Content-Type") or "").lower()
+        if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
+            return f"ERROR: Unsupported content type for summarization: {content_type or 'unknown'}"
+
+        raw_html = response.raw.read(MAX_HTML_BYTES + 1, decode_content=True)
+        if len(raw_html) > MAX_HTML_BYTES:
+            return f"ERROR: Document at {url} exceeded the {MAX_HTML_BYTES} byte ingestion limit."
+
+        encoding = response.encoding or response.apparent_encoding or "utf-8"
+        html = raw_html.decode(encoding, errors="replace")
+
+        metadata, document_text = self._extract_readable_document(html, url)
+        if not document_text:
+            return f"ERROR: No readable text could be extracted from {url}."
+
+        try:
+            return self._summarize_document(metadata, document_text, focus)
+        except Exception as exc:
+            return f"ERROR: Failed to summarize fetched content from {url}. Details: {exc}"
 
     def _save_to_memory(self, args):
         if self.memory and self.llm:

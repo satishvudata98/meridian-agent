@@ -29,7 +29,7 @@ The orchestrator starts in a `planning` phase and requires the model to call `cr
 The current tool list includes:
 
 - Tavily web search through `web_search`.
-- URL summarization placeholder through `summarise_url`.
+- URL fetching and grounded page summarization through `summarise_url`.
 - Vector memory save/search through PostgreSQL pgvector.
 - Python calculation and analysis through `execute_code`.
 - HITL pause through `ask_human_guidance`.
@@ -137,6 +137,7 @@ For deployed frontend hosts such as Vercel, `NEXT_PUBLIC_*` values are baked int
 - Vector memory is implemented when PostgreSQL and pgvector are reachable.
 - Code execution is implemented with basic controls.
 - Digest detail and paused-state detail still rely on client-side filtering from the mixed `/digests` response rather than dedicated resource endpoints.
-- URL summarization and S3 raw document archiving remain placeholders.
+- URL summarization now fetches HTML with bounded ingestion, extracts readable text, and returns an LLM-grounded summary with source metadata.
+- S3 raw document archiving, richer chunking, and source persistence remain placeholders.
 - Redis rate limiting is implemented as a class but not yet attached to Tavily calls.
 - CloudWatch metrics publishing is implemented as a helper but not yet called by the orchestrator.

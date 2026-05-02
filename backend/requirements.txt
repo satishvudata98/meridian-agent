@@ -5,3 +5,5 @@ redis
 tavily-python
 aws-xray-sdk
 openai
+beautifulsoup4
+requests

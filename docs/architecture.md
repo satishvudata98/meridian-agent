@@ -90,7 +90,7 @@ The orchestrator uses Anthropic-style message and tool blocks internally. The Op
 
 - `create_research_plan`: acknowledges a plan and advances the workflow.
 - `web_search`: calls Tavily search when configured.
-- `summarise_url`: placeholder simulation, not a real fetch/scrape implementation yet.
+- `summarise_url`: fetches HTML with timeout and content-type checks, extracts readable text, and asks the active LLM provider for a grounded summary.
 - `save_to_memory` and `search_memory`: use embeddings plus PostgreSQL pgvector when memory is connected.
 - `create_digest`: writes the final digest to DynamoDB.
 - `execute_code`: invokes the isolated code executor Lambda when deployed, or a local subprocess fallback during local runs.
@@ -100,7 +100,7 @@ The orchestrator uses Anthropic-style message and tool blocks internally. The Op
 
 - The `RateLimiter` class exists but is not currently wired into `web_search`.
 - `MetricsPublisher` exists and the cost guardrail reads `AgentRunCost`, but the orchestrator does not currently publish run metrics.
-- The S3 raw-document bucket is provisioned, but `summarise_url` does not yet fetch, parse, store, or summarize real HTML.
+- The S3 raw-document bucket is provisioned, but `summarise_url` still does not archive fetched documents or persist extracted source text.
 - Function URLs are configured with `AuthType: NONE`; production use should add authentication and authorization.
 - The code sandbox has a basic blocklist and Lambda isolation, but it is not a full hardened container sandbox.
 - The WebSocket stream currently sends operational events, not full model reasoning text.

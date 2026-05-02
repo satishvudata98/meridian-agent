@@ -153,7 +153,7 @@ Until metrics are wired in, use AWS Billing, CloudWatch Logs, and provider dashb
 - Remove or lock down the remaining legacy public Function URL resources in infrastructure if they are no longer needed operationally.
 - Wire `RateLimiter` into Tavily and any other external APIs.
 - Call `MetricsPublisher.publish_run_metrics()` from the orchestrator with real token, duration, cost, and tool-call data.
-- Replace `summarise_url` simulation with real fetch, parse, S3 archive, and summary logic.
+- Extend `summarise_url` with S3 archive, persisted cleaned text, and richer ingestion beyond the current fetch/parse/summary implementation.
 - Split the mixed `/digests` contract into dedicated endpoints such as `GET /digests/{digest_id}` and `GET /runs/{run_id}/pause`.
 - Add backend unit tests for tool execution, HITL resume, timeout behavior, and OpenAI/Bedrock response mapping.
 - Add frontend tests for dashboard, run trace, digest view, and HITL submission.
