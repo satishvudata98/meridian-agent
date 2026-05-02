@@ -4,10 +4,22 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      deployment_mode:
+        description: Deployment profile to apply to the shared stack
+        required: true
+        default: demo
+        type: choice
+        options:
+          - demo
+          - full
 
 jobs:
   test-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      STACK_NAME: ai-research-agent-prod
     steps:
       - uses: actions/checkout@v3
       
@@ -36,8 +48,21 @@ jobs:
       - name: Setup AWS SAM CLI
         uses: aws-actions/setup-sam@v2
 
+      - name: Resolve Deployment Mode
+        id: deploy-mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DEPLOYMENT_MODE="${{ github.event.inputs.deployment_mode }}"
+          else
+            DEPLOYMENT_MODE="demo"
+          fi
+
+          echo "deployment_mode=$DEPLOYMENT_MODE" >> "$GITHUB_OUTPUT"
+          echo "Deploying stack $STACK_NAME with DeploymentMode=$DEPLOYMENT_MODE"
+
       - name: SAM Build
-        run: sam build --template-file infra/template.yaml
+        run: sam build --template-file infra/template.yaml --parameter-overrides DeploymentMode=${{ steps.deploy-mode.outputs.deployment_mode }}
 
       - name: SAM Deploy
-        run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset --stack-name ai-research-agent-prod --resolve-s3 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND
+        run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset --stack-name $STACK_NAME --resolve-s3 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND --parameter-overrides DeploymentMode=${{ steps.deploy-mode.outputs.deployment_mode }}

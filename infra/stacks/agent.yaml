@@ -3,6 +3,9 @@ Transform: AWS::Serverless-2016-10-31
 Description: AI Research Agent - Orchestrator and SQS
 
 Parameters:
+  DeploymentMode:
+    Type: String
+    Default: full
   CognitoUserPoolId:
     Type: String
   CognitoUserPoolClientId:
@@ -18,9 +21,29 @@ Parameters:
   RunAccessSecret:
     Type: String
     NoEcho: true
+  DatabaseHost:
+    Type: String
+    Default: ''
+  DatabaseName:
+    Type: String
+    Default: ''
   DatabasePassword:
     Type: String
     NoEcho: true
+    Default: ''
+  LambdaSecurityGroupId:
+    Type: String
+    Default: ''
+  PrivateSubnet1Id:
+    Type: String
+    Default: ''
+  PrivateSubnet2Id:
+    Type: String
+    Default: ''
+
+Conditions:
+  UseVpcConfig: !Equals [!Ref DeploymentMode, full]
+  UseMemoryStore: !Not [!Equals [!Ref DatabaseHost, '']]
 
 Resources:
   HttpApi:
@@ -74,21 +97,23 @@ Resources:
           RUN_ACCESS_SECRET: !Ref RunAccessSecret
           LLM_PROVIDER: "openai"
           WS_API_ENDPOINT: !Ref WebSocketApiUrl
-          # Database connection — sourced from the MemoryStack output
-          DB_HOST: !ImportValue AgentDBEndpointAddress
-          DB_USER: agentadmin
-          DB_PASSWORD: !Ref DatabasePassword
-          DB_NAME: !ImportValue AgentDBName
+          # Database connection — optional in low-cost demo mode
+          DB_HOST: !If [UseMemoryStore, !Ref DatabaseHost, !Ref AWS::NoValue]
+          DB_USER: !If [UseMemoryStore, agentadmin, !Ref AWS::NoValue]
+          DB_PASSWORD: !If [UseMemoryStore, !Ref DatabasePassword, !Ref AWS::NoValue]
+          DB_NAME: !If [UseMemoryStore, !Ref DatabaseName, !Ref AWS::NoValue]
           CODE_EXECUTOR_ARN: !GetAtt CodeExecutorFunction.Arn
           HITL_TABLE: AgentPausedState
 
-      # Attach Lambda to private subnets so it can securely reach RDS and route internet traffic via NAT
-      VpcConfig:
-        SecurityGroupIds:
-          - !ImportValue AgentLambdaSecurityGroupId
-        SubnetIds:
-          - !ImportValue AgentPrivateSubnet1Id
-          - !ImportValue AgentPrivateSubnet2Id
+      # In demo mode the orchestrator stays outside the VPC to avoid NAT, RDS, and Redis costs.
+      VpcConfig: !If
+        - UseVpcConfig
+        - SecurityGroupIds:
+            - !Ref LambdaSecurityGroupId
+          SubnetIds:
+            - !Ref PrivateSubnet1Id
+            - !Ref PrivateSubnet2Id
+        - !Ref AWS::NoValue
       Policies:
         - AWSLambdaBasicExecutionRole
         - AWSLambdaVPCAccessExecutionRole  # Required to create/delete VPC network interfaces (ENIs)

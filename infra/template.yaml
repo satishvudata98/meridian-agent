@@ -2,10 +2,23 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Autonomous AI Research Agent Root Template
 
+Parameters:
+  DeploymentMode:
+    Type: String
+    Default: full
+    AllowedValues:
+      - full
+      - demo
+    Description: full keeps the VPC, RDS, and Redis memory stack; demo deploys the low-cost serverless-only path.
+
+Conditions:
+  IsFullDeployment: !Equals [!Ref DeploymentMode, full]
+
 Resources:
   # 1. Networking is the foundation — deploy first
   NetworkStack:
     Type: AWS::Serverless::Application
+    Condition: IsFullDeployment
     Properties:
       Location: stacks/network.yaml
 
@@ -27,6 +40,7 @@ Resources:
   # 4. Memory (RDS, Redis, S3) — depends on network for VPC + SG imports
   MemoryStack:
     Type: AWS::Serverless::Application
+    Condition: IsFullDeployment
     DependsOn: NetworkStack
     Properties:
       Location: stacks/memory.yaml
@@ -44,19 +58,23 @@ Resources:
     Type: AWS::Serverless::Application
     DependsOn:
       - AuthStack
-      - NetworkStack
-      - MemoryStack
       - ApiStack
     Properties:
       Location: stacks/agent.yaml
       Parameters:
+        DeploymentMode: !Ref DeploymentMode
         CognitoUserPoolId: !GetAtt AuthStack.Outputs.UserPoolId
         CognitoUserPoolClientId: !GetAtt AuthStack.Outputs.UserPoolClientId
         WebSocketApiUrl: !GetAtt ApiStack.Outputs.WebSocketApiUrl
         TavilyApiKey: '{{resolve:ssm:TAVILY_API_KEY}}'
         OpenAiApiKey: '{{resolve:ssm:OPENAI_API_KEY}}'
         RunAccessSecret: '{{resolve:ssm:/agent/run_access_secret}}'
-        DatabasePassword: '{{resolve:ssm:/agent/db_password}}'
+        DatabaseHost: !If [IsFullDeployment, !GetAtt MemoryStack.Outputs.DBEndpointAddress, '']
+        DatabaseName: !If [IsFullDeployment, !GetAtt MemoryStack.Outputs.DBName, '']
+        DatabasePassword: !If [IsFullDeployment, '{{resolve:ssm:/agent/db_password}}', '']
+        LambdaSecurityGroupId: !If [IsFullDeployment, !GetAtt NetworkStack.Outputs.LambdaSecurityGroupId, '']
+        PrivateSubnet1Id: !If [IsFullDeployment, !GetAtt NetworkStack.Outputs.PrivateSubnet1Id, '']
+        PrivateSubnet2Id: !If [IsFullDeployment, !GetAtt NetworkStack.Outputs.PrivateSubnet2Id, '']
 
   # 7. Observability — standalone cost guardrail
   ObservabilityStack:

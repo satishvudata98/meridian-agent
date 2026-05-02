@@ -1,0 +1,102 @@
+name: Cleanup Memory Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: AWS region containing the Meridian stack resources
+        required: true
+        default: us-east-1
+        type: string
+      cleanup_mode:
+        description: report only or delete matching manual DB snapshots
+        required: true
+        default: report
+        type: choice
+        options:
+          - report
+          - delete
+      db_instance_identifier:
+        description: RDS DB instance identifier used by full mode
+        required: true
+        default: agent-memory-db
+        type: string
+      empty_raw_doc_bucket:
+        description: Also empty the raw-document bucket if it still exists
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Resolve Account Resources
+        id: resource-context
+        shell: bash
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          RAW_DOC_BUCKET="meridian-agent-raw-docs-$ACCOUNT_ID-${{ inputs.aws_region }}"
+
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          echo "raw_doc_bucket=$RAW_DOC_BUCKET" >> "$GITHUB_OUTPUT"
+          echo "Resolved raw document bucket: $RAW_DOC_BUCKET"
+
+      - name: Report Manual DB Snapshots
+        id: snapshot-report
+        shell: bash
+        run: |
+          SNAPSHOTS=$(aws rds describe-db-snapshots \
+            --db-instance-identifier "${{ inputs.db_instance_identifier }}" \
+            --snapshot-type manual \
+            --query 'DBSnapshots[].DBSnapshotIdentifier' \
+            --output text 2>/dev/null || true)
+
+          echo "Found snapshots: ${SNAPSHOTS:-<none>}"
+          {
+            echo "snapshots<<EOF"
+            echo "$SNAPSHOTS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Delete Manual DB Snapshots
+        if: ${{ inputs.cleanup_mode == 'delete' }}
+        shell: bash
+        run: |
+          SNAPSHOTS="${{ steps.snapshot-report.outputs.snapshots }}"
+          if [ -z "$SNAPSHOTS" ]; then
+            echo "No manual DB snapshots found for ${{ inputs.db_instance_identifier }}."
+            exit 0
+          fi
+
+          for SNAPSHOT_ID in $SNAPSHOTS; do
+            echo "Deleting snapshot $SNAPSHOT_ID"
+            aws rds delete-db-snapshot --db-snapshot-identifier "$SNAPSHOT_ID"
+          done
+
+      - name: Empty Raw Document Bucket
+        if: ${{ inputs.empty_raw_doc_bucket }}
+        shell: bash
+        run: |
+          BUCKET="${{ steps.resource-context.outputs.raw_doc_bucket }}"
+          if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+            echo "Emptying s3://$BUCKET"
+            aws s3 rm "s3://$BUCKET" --recursive
+          else
+            echo "Bucket s3://$BUCKET does not exist."
+          fi
+
+      - name: Final Summary
+        shell: bash
+        run: |
+          echo "Cleanup mode: ${{ inputs.cleanup_mode }}"
+          echo "DB instance identifier: ${{ inputs.db_instance_identifier }}"
+          echo "Raw document bucket: ${{ steps.resource-context.outputs.raw_doc_bucket }}"
+          echo "Snapshot list: ${{ steps.snapshot-report.outputs.snapshots || '<none>' }}"

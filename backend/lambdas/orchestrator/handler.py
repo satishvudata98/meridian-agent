@@ -13,7 +13,7 @@ from aws_xray_sdk.core import patch_all
 patch_all()
 
 from shared.llm_factory import get_llm_client
-from shared.tool_schemas import TOOL_SCHEMAS
+from shared.tool_schemas import get_tool_schemas
 from shared.tool_executor import ToolExecutor
 from shared.memory_store import MemoryStore
 
@@ -75,6 +75,8 @@ def run_agent(
     else:
         print("WARNING: DB_HOST not set. Proceeding without vector memory.")
 
+    available_tool_schemas = get_tool_schemas(memory_enabled=memory_store is not None)
+
     executor = ToolExecutor(
         llm_client=llm,
         memory_store=memory_store,
@@ -133,7 +135,9 @@ def run_agent(
         if phase == "planning":
             return base + "You must FIRST call the 'create_research_plan' tool to outline your strategy before taking any other actions."
         elif phase == "researching":
-            return base + "Execute your research plan. Use your tools to search the web and save important findings to memory. Once you have deep, comprehensive data, you may propose a digest using the 'create_digest' tool."
+            if memory_store:
+                return base + "Execute your research plan. Use your tools to search the web and save important findings to memory. Once you have deep, comprehensive data, you may propose a digest using the 'create_digest' tool."
+            return base + "Execute your research plan. Use your tools to search the web, inspect sources carefully, and synthesize grounded findings. Once you have deep, comprehensive data, you may propose a digest using the 'create_digest' tool."
         elif phase == "writing":
             return base + "You are now in the Writer/Critic persona. Review your proposed digest. Ensure it has an executive summary, detailed analysis with contradictions, and citations. You MUST call the 'create_digest' tool to submit your final work. Do not finish your turn without calling this tool."
         return base
@@ -209,7 +213,7 @@ def run_agent(
         publish_ws_event(run_id, {"step": step, "phase": current_phase, "status": "thinking", "message": f"Thinking in phase: {current_phase}..."})
 
         system_prompt = get_system_prompt(current_phase)
-        response = llm.fast_call(messages, system=system_prompt, tools=TOOL_SCHEMAS)
+        response = llm.fast_call(messages, system=system_prompt, tools=available_tool_schemas)
         
         stop_reason = response.get("stop_reason")
         response_content = response.get("content", [])

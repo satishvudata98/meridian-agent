@@ -1,3 +1,13 @@
+MEMORY_TOOL_NAMES = {"save_to_memory", "search_memory"}
+
+
+def get_tool_schemas(memory_enabled: bool = True):
+    if memory_enabled:
+        return TOOL_SCHEMAS
+
+    return [tool for tool in TOOL_SCHEMAS if tool["name"] not in MEMORY_TOOL_NAMES]
+
+
 TOOL_SCHEMAS = [
     {
         "name": "create_research_plan",

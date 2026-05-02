@@ -86,6 +86,7 @@ Useful local checks:
 
 ```powershell
 sam validate --template-file infra/template.yaml
+sam validate --template-file infra/template.yaml --parameter-overrides DeploymentMode=demo
 sam build --template-file infra/template.yaml
 ```
 
@@ -119,6 +120,7 @@ Current assumptions in this repo:
 - AWS region: `us-east-1`
 - frontend host: Vercel
 - default LLM provider in the deployed template: `openai`
+- default infrastructure profile in the deployed template: `full`
 
 Important:
 
@@ -235,7 +237,7 @@ Create every key below before running `sam deploy`.
 | `OPENAI_API_KEY` | `String` | Yes | `sk-...` | OpenAI dashboard |
 | `TAVILY_API_KEY` | `String` | Yes | `tvly-...` | Tavily dashboard |
 | `/agent/run_access_secret` | `String` | Yes | long random secret | Generate it yourself |
-| `/agent/db_password` | `String` | Yes | strong database password | Generate it yourself |
+| `/agent/db_password` | `String` | Full mode only | strong database password | Generate it yourself |
 | `/agent/auth/google_client_id` | `String` | Yes | `1234567890-abc.apps.googleusercontent.com` | Google Cloud OAuth client |
 | `/agent/auth/google_client_secret` | `String` | Yes | `GOCSPX-...` | Google Cloud OAuth client |
 | `/agent/frontend_base_url` | `String` | Yes | `https://your-project.vercel.app` | Your Vercel project URL |
@@ -307,10 +309,42 @@ sam build --template-file infra/template.yaml
 sam deploy --template-file infra/template.yaml --stack-name ai-research-agent-prod --resolve-s3 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND
 ```
 
+For a low-cost demo-only deploy, use the demo infrastructure profile instead:
+
+```powershell
+sam build --template-file infra/template.yaml
+sam deploy --template-file infra/template.yaml --stack-name ai-research-agent-demo --resolve-s3 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND --parameter-overrides DeploymentMode=demo
+```
+
+Demo mode skips the Network and Memory stacks. That means no VPC, NAT Gateway, RDS, or Redis. The app still keeps Cognito, HTTP API, WebSocket streaming, SQS, Lambda, DynamoDB, and HITL. Vector memory save/search is intentionally disabled in this mode.
+
 If you deploy through GitHub Actions instead, make sure the repository secrets exist:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
+
+Current repository automation behavior:
+
+- A push to `main` deploys the shared `ai-research-agent-prod` stack in `DeploymentMode=demo`.
+- If you need the expensive memory-enabled profile, use GitHub Actions `workflow_dispatch` and choose `deployment_mode=full`.
+- A later push to `main`, or a manual dispatch with `deployment_mode=demo`, updates the same stack back to demo mode and removes the VPC and memory nested stacks again.
+
+Important cleanup note when switching from `full` back to `demo` on the same stack:
+
+- CloudFormation will remove the VPC, NAT, Redis, and RDS resources from the stack update path.
+- The RDS instance is configured with snapshot retention, so AWS will usually leave a final DB snapshot behind. Delete that snapshot manually if you do not want to preserve data or pay for snapshot storage.
+- If the raw-document S3 bucket ever contains objects, empty it before expecting CloudFormation to delete that nested memory stack cleanly.
+
+To avoid forgetting that cleanup, the repo now includes a manual GitHub Actions workflow named `Cleanup Memory Artifacts`.
+
+Suggested usage after a `full` to `demo` switch:
+
+1. Open GitHub Actions and run `Cleanup Memory Artifacts`.
+2. Start with `cleanup_mode=report` to see which manual snapshots still exist for `agent-memory-db`.
+3. Run it again with `cleanup_mode=delete` when you are ready to remove those snapshots.
+4. Set `empty_raw_doc_bucket=true` only if CloudFormation could not remove the raw-document bucket because objects were left inside.
+
+This workflow is intentionally manual so you do not accidentally destroy snapshots you wanted to inspect.
 
 ## 8. Collect The Root Stack Outputs After Deployment
 

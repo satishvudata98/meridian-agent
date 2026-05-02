@@ -17,6 +17,17 @@ The root template composes six nested applications:
 - `AgentStack`: HTTP API, SQS, orchestrator, trigger, digests, code executor, and HITL Lambdas.
 - `ObservabilityStack`: cost alarm SNS topic, EventBridge schedule, and guardrail Lambda.
 
+The root template now supports two deployment profiles through the `DeploymentMode` parameter:
+
+- `full`: deploys the original VPC, RDS, and Redis-backed memory path.
+- `demo`: skips `NetworkStack` and `MemoryStack` so the app runs as a low-cost serverless demo without NAT, RDS, or Redis.
+
+The current GitHub Actions workflow is aligned to this cost model:
+
+- pushes to `main` deploy the shared stack in `demo` mode by default
+- manual `workflow_dispatch` can temporarily switch the same stack into `full` mode for memory-focused demos
+- switching the same stack back to `demo` removes the expensive nested stacks again, subject to normal CloudFormation delete behavior such as final RDS snapshots
+
 `AgentStack` depends on auth, networking, memory, and the WebSocket stack outputs so the HTTP API can validate JWTs, the orchestrator can run inside private subnets, and the orchestrator can publish live trace events.
 
 ## 2. Network Stack
@@ -165,3 +176,5 @@ Current caveat: the `MetricsPublisher` helper must be called by the orchestrator
 ## 9. Cost Notes
 
 This stack can incur non-trivial AWS charges because it provisions NAT Gateway, RDS, and ElastiCache Serverless Redis in addition to Lambda, SQS, DynamoDB, API Gateway, Bedrock/OpenAI usage, and CloudWatch. For development, tear down stacks that are not actively needed and keep the spend guardrail metric publishing connected before relying on the alarm.
+
+For demo-only usage, prefer `DeploymentMode=demo`. That mode removes the main idle-cost drivers and leaves the app running on the lower-cost serverless path only.
